@@ -9,6 +9,12 @@ public class PickupSpawner : MonoBehaviour
     private bool running;
     private float powerTimer;
     private float cardTimer = -1f;
+    private PowerType lastPower;
+    private int samePowerStreak;
+
+    // O tutorial liga/desliga os spawns automáticos.
+    public bool PowersEnabled { get; set; } = true;
+    public bool CardsEnabled { get; set; } = true;
     private readonly List<CardPickup> cardPickups = new List<CardPickup>();
     private readonly List<PowerPickup> powers = new List<PowerPickup>();
 
@@ -42,7 +48,7 @@ public class PickupSpawner : MonoBehaviour
         var cfg = gm.Config;
 
         // Pacote de cartas: só quando a mão está baixa e não tem outro no mapa.
-        if (gm.Hand.Count <= cfg.LowHandThreshold && cardPickups.Count == 0)
+        if (CardsEnabled && gm.Hand.Count <= cfg.LowHandThreshold && cardPickups.Count == 0)
         {
             if (cardTimer < 0f) cardTimer = gm.Hand.Count == 0 ? 0.6f : Random.Range(1.2f, 2.8f);
             cardTimer -= Time.deltaTime;
@@ -53,12 +59,33 @@ public class PickupSpawner : MonoBehaviour
             }
         }
 
+        if (!PowersEnabled) return;
         powerTimer -= Time.deltaTime;
         if (powerTimer <= 0f)
         {
             powerTimer = Random.Range(cfg.PowerSpawnInterval.x, cfg.PowerSpawnInterval.y);
-            if (powers.Count < cfg.MaxPowersOnMap) SpawnPower((PowerType)Random.Range(0, 3));
+            if (powers.Count < cfg.MaxPowersOnMap) SpawnPower(NextPowerType());
         }
+    }
+
+    // Sorteia o tipo do poder: × é raro (chance por chefe) e o mesmo tipo
+    // nunca aparece mais de 2 vezes seguidas.
+    private PowerType NextPowerType()
+    {
+        PowerType type = Random.value < gm.CurrentBossData.MultiplyChance
+            ? PowerType.Multiply
+            : (Random.value < 0.5f ? PowerType.Add : PowerType.Subtract);
+
+        if (type == lastPower && samePowerStreak >= 2)
+        {
+            if (type == PowerType.Add) type = PowerType.Subtract;
+            else if (type == PowerType.Subtract) type = PowerType.Add;
+            else type = Random.value < 0.5f ? PowerType.Add : PowerType.Subtract;
+        }
+
+        samePowerStreak = type == lastPower ? samePowerStreak + 1 : 1;
+        lastPower = type;
+        return type;
     }
 
     public void SpawnCardPack()
@@ -78,5 +105,12 @@ public class PickupSpawner : MonoBehaviour
     {
         Vector2 pos = level.RandomSpawnPoint(gm.Player.transform.position, 7f);
         powers.Add(PowerPickup.Spawn(type, pos));
+    }
+
+    public void SpawnPowerAt(PowerType type, Vector2 position) => powers.Add(PowerPickup.Spawn(type, position));
+
+    public bool HasPowerOnMap
+    {
+        get { powers.RemoveAll(p => p == null); return powers.Count > 0; }
     }
 }

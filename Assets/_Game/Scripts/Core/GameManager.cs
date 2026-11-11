@@ -5,7 +5,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
-// Cérebro do jogo: fluxo (título → chefe 1..3 → vitória/derrota), mão, poderes e UI.
+// Cérebro do jogo: fluxo (título → tutorial (Ás) → chefes 1..3 → vitória/derrota), mão, poderes e UI.
 public class GameManager : MonoBehaviour
 {
     public enum GameState { Title, Transition, Playing, GameOver, Victory }
@@ -33,20 +33,25 @@ public class GameManager : MonoBehaviour
     public Hand Hand { get; private set; }
     public FusionController Fusion { get; private set; }
     public BossController Boss { get; private set; }
-    public int BossIndex { get; private set; }
+    public int BossIndex { get; private set; }        // -1 = tutorial
+    public bool IsTutorial => BossIndex < 0;
     public int RedrawsLeft { get; private set; }
     public GameState State { get; private set; }
     public RunStats Stats { get; } = new RunStats();
-    public bool CanAct => State == GameState.Playing && !PlayerHealth.IsDead;
-    public BossData CurrentBossData => config.Bosses[BossIndex];
+    public BossData CurrentBossData { get; private set; }
+    public PickupSpawner Pickups { get; private set; }
+
+    // O tutorial trava o input do jogador durante as pausas explicativas.
+    public bool InputLocked { get; set; }
+    public bool CanAct => State == GameState.Playing && !PlayerHealth.IsDead && !InputLocked;
 
     public event Action OnRedrawsChanged;
     public event Action<BossController> OnBossSpawned;
     public event Action<HitResult> OnBossHit;
 
     private LevelBuilder level;
-    private PickupSpawner pickups;
     private GameUI ui;
+    private TutorialDirector tutorial;
     private float acceptClickTime;
 
     private void Awake()
@@ -62,8 +67,8 @@ public class GameManager : MonoBehaviour
         if (player.GetComponent<PlayerCards>() == null) player.gameObject.AddComponent<PlayerCards>();
 
         level = new LevelBuilder(platformTemplate, floor);
-        pickups = gameObject.AddComponent<PickupSpawner>();
-        pickups.Init(this, level);
+        Pickups = gameObject.AddComponent<PickupSpawner>();
+        Pickups.Init(this, level);
         ui = GameUI.Build(this);
     }
 
@@ -84,7 +89,8 @@ public class GameManager : MonoBehaviour
             State = GameState.Title;
             player.ControlsEnabled = false;
             PlayerHealth.forcedInvulnerable = true;
-            ApplyLevel(0);
+            CurrentBossData = config.Bosses[0];
+            ApplyLevel(CurrentBossData);
             ui.ShowTitle(true);
         }
     }
@@ -97,66 +103,119 @@ public class GameManager : MonoBehaviour
     private void Update()
     {
         Fusion.Tick();
+        player.InputFrozen = Fusion.Active || InputLocked; // tempo parado = personagem parado
 
-        bool click = Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
-        bool key = Keyboard.current != null && (Keyboard.current.enterKey.wasPressedThisFrame || Keyboard.current.spaceKey.wasPressedThisFrame);
+        var mouse = Mouse.current;
+        var keyboard = Keyboard.current;
+        bool click = mouse != null && mouse.leftButton.wasPressedThisFrame;
+        bool enter = keyboard != null && keyboard.enterKey.wasPressedThisFrame;
+        bool space = keyboard != null && keyboard.spaceKey.wasPressedThisFrame;
 
         switch (State)
         {
             case GameState.Title:
-                if (click || key)
-                {
-                    StartCoroutine(BeginBoss(0));
-                }
+                if (click) StartCoroutine(BeginTutorial());
+                else if (enter) StartCoroutine(BeginBoss(0));
                 break;
             case GameState.GameOver:
             case GameState.Victory:
-                if ((click || key) && Time.unscaledTime >= acceptClickTime) Reload();
+                if ((click || enter || space) && Time.unscaledTime >= acceptClickTime) Reload();
                 break;
         }
+
+        // ESC pula o tutorial a qualquer momento
+        if (IsTutorial && State == GameState.Playing && keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+            SkipTutorial();
     }
 
     // ===================== Fluxo =====================
-    private void ApplyLevel(int bossIndex)
+    private void ApplyLevel(BossData data)
     {
-        var data = config.Bosses[bossIndex];
         level.Build(data.LayoutIndex, data.PlatformColor);
         if (Camera.main != null) Camera.main.backgroundColor = data.BackgroundColor;
     }
 
-    private IEnumerator BeginBoss(int index)
+    // Prepara a fase (limpa tudo, reposiciona o player, mão inicial). Usado por chefes e tutorial.
+    private IEnumerator PrepareFight(BossData data, int index, IEnumerable<Card> startingHand = null)
     {
         State = GameState.Transition;
         BossIndex = index;
-        var data = config.Bosses[index];
+        CurrentBossData = data;
         ui.ShowTitle(false);
 
         Fusion.Cancel();
-        pickups.StopAndClear();
+        Pickups.StopAndClear();
         ClearProjectiles();
-        ApplyLevel(index);
+        if (Boss != null) Destroy(Boss.gameObject);
+        ApplyLevel(data);
 
         player.ResetTo(new Vector2(0f, LevelBuilder.FloorTop + 0.05f));
         player.ControlsEnabled = true;
         PlayerHealth.forcedInvulnerable = true;
+        PlayerHealth.cannotDie = index < 0;
         PlayerHealth.SetMax(config.PlayerMaxHp, true);
 
         RedrawsLeft = config.RedrawsPerBoss;
         OnRedrawsChanged?.Invoke();
 
+        if (startingHand != null)
+        {
+            Hand.RemoveAll();
+            foreach (var c in startingHand) { Hand.Add(c); yield return new WaitForSeconds(0.08f); }
+        }
+        else yield return DealUpTo(config.StartingHandSize);
+    }
+
+    private IEnumerator BeginBoss(int index)
+    {
+        var data = config.Bosses[index];
         ui.ShowBanner($"BOSS {index + 1}/{config.Bosses.Count}", data.DisplayName, 2.2f);
-        yield return DealUpTo(config.StartingHandSize);
+        yield return PrepareFight(data, index);
         yield return new WaitForSeconds(0.6f);
 
+        SpawnBoss(data);
+        yield return new WaitForSeconds(1.4f);
+        PlayerHealth.forcedInvulnerable = false;
+        State = GameState.Playing;
+        Pickups.PowersEnabled = Pickups.CardsEnabled = true;
+        Pickups.Begin();
+    }
+
+    // Tutorial: mão com números baixos (o Ás esconde 1–8) e o TutorialDirector conduz o resto.
+    private IEnumerator BeginTutorial()
+    {
+        ui.ShowBanner("TUTORIAL", config.TutorialBoss.DisplayName, 1.6f);
+        var hand = new[]
+        {
+            new Card(Suit.Clubs, 2), new Card(Suit.Spades, 7), new Card(Suit.Hearts, 4),
+            new Card(Suit.Diamonds, 5), new Card(Suit.Clubs, 1),
+        };
+        yield return PrepareFight(config.TutorialBoss, -1, hand);
+        PlayerHealth.forcedInvulnerable = false;
+        State = GameState.Playing;
+        Pickups.PowersEnabled = Pickups.CardsEnabled = false;
+        Pickups.Begin();
+
+        tutorial = gameObject.AddComponent<TutorialDirector>();
+        tutorial.Run(this, ui);
+    }
+
+    private void SkipTutorial()
+    {
+        if (tutorial != null) Destroy(tutorial);
+        ui.HidePrompt();
+        InputLocked = false;
+        FusionController.SetTimeScale(1f);
+        StartCoroutine(BeginBoss(0));
+    }
+
+    public BossController SpawnBoss(BossData data)
+    {
         Boss = BossController.Spawn(config, data, PlayerHealth, LevelBuilder.FloorTop);
         Boss.OnHit += HandleBossHit;
         Boss.OnDefeated += HandleBossDefeated;
         OnBossSpawned?.Invoke(Boss);
-
-        yield return new WaitForSeconds(1.4f);
-        PlayerHealth.forcedInvulnerable = false;
-        State = GameState.Playing;
-        pickups.Begin();
+        return Boss;
     }
 
     private void HandleBossHit(HitResult r)
@@ -177,7 +236,7 @@ public class GameManager : MonoBehaviour
         State = GameState.Transition;
         PlayerHealth.forcedInvulnerable = true;
         Fusion.Cancel();
-        pickups.StopAndClear();
+        Pickups.StopAndClear();
         StartCoroutine(AfterBossDefeated());
     }
 
@@ -185,6 +244,18 @@ public class GameManager : MonoBehaviour
     {
         yield return new WaitForSeconds(0.6f);
         ClearProjectiles();
+
+        if (IsTutorial)
+        {
+            if (tutorial != null) Destroy(tutorial);
+            ui.HidePrompt();
+            InputLocked = false;
+            ui.ShowBanner("TUTORIAL COMPLETE", "GOOD LUCK!", 2f);
+            yield return new WaitForSeconds(2.4f);
+            StartCoroutine(BeginBoss(0));
+            yield break;
+        }
+
         ui.ShowBanner("DEFEATED", CurrentBossData.DisplayName + " FOLDED!", 2f);
         yield return new WaitForSeconds(2.4f);
 
@@ -207,7 +278,7 @@ public class GameManager : MonoBehaviour
     {
         State = GameState.GameOver;
         Fusion.Cancel();
-        retryBossIndex = BossIndex;
+        retryBossIndex = Mathf.Max(0, BossIndex);
         skipTitle = true;
         acceptClickTime = Time.unscaledTime + 1.5f;
         StartCoroutine(GameOverSequence());
@@ -255,6 +326,8 @@ public class GameManager : MonoBehaviour
     }
 
     // R: descarta a mão inteira e compra uma nova (limite por chefe).
+    public event Action OnRedraw;
+
     public void Redraw()
     {
         if (!CanAct || Fusion.Active || RedrawsLeft <= 0) return;
@@ -262,6 +335,7 @@ public class GameManager : MonoBehaviour
         Hand.RemoveAll();
         StartCoroutine(DealUpTo(config.StartingHandSize));
         OnRedrawsChanged?.Invoke();
+        OnRedraw?.Invoke();
         Fx.Popup("REDRAW!", player.transform.position + Vector3.up * 2.5f, Color.white, 6f, 0.8f);
     }
 
@@ -269,7 +343,7 @@ public class GameManager : MonoBehaviour
     public static string DebugSpawnPower(string type)
     {
         if (Instance == null) return "no game";
-        Instance.pickups.SpawnPower(Enum.TryParse(type, out PowerType t) ? t : PowerType.Add);
+        Instance.Pickups.SpawnPower(Enum.TryParse(type, out PowerType t) ? t : PowerType.Add);
         return "spawned";
     }
 
@@ -278,6 +352,13 @@ public class GameManager : MonoBehaviour
         if (Instance == null || Instance.State != GameState.Title) return "not in title";
         Instance.StartCoroutine(Instance.BeginBoss(0));
         return "started";
+    }
+
+    public static string DebugTutorial()
+    {
+        if (Instance == null || Instance.State != GameState.Title) return "not in title";
+        Instance.StartCoroutine(Instance.BeginTutorial());
+        return "tutorial";
     }
 
     public static string DebugFusion(string type)
@@ -326,10 +407,19 @@ public class GameManager : MonoBehaviour
         return "god " + Instance.PlayerHealth.forcedInvulnerable;
     }
 
+    public static string DebugState()
+    {
+        var gm = Instance;
+        if (gm == null) return "no game";
+        var p = gm.player;
+        return $"state={gm.State} locked={gm.InputLocked} frozen={p.InputFrozen} controls={p.ControlsEnabled} " +
+               $"fusion={gm.Fusion.Active} ts={Time.timeScale} pos={p.transform.position} move={p.MoveInput} " +
+               $"kb={UnityEngine.InputSystem.Keyboard.current?.aKey.isPressed}";
+    }
+
     public static string DebugBoss(string index)
     {
         if (Instance == null) return "no game";
-        if (Instance.Boss != null) Destroy(Instance.Boss.gameObject);
         Instance.StopAllCoroutines();
         Instance.StartCoroutine(Instance.BeginBoss(int.Parse(index)));
         return "ok";

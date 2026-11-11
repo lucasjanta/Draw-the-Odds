@@ -27,7 +27,7 @@ public static class DrawTheOddsSetup
         var log = new StringBuilder();
 
         // 1) Sprites novos (chefes placeholder e verso da carta) com as configs de pixel art
-        foreach (var name in new[] { "SPADES_JACK", "HEARTS_QUEEN", "DIAMONDS_KING", "BACK_HYPNO" })
+        foreach (var name in new[] { "SPADES_JACK", "HEARTS_QUEEN", "DIAMONDS_KING", "BACK_HYPNO", "CLUBS_ACE" })
             ConfigureSprite(CardsDir + name + ".png", log);
 
         // 2) GameConfig
@@ -53,6 +53,7 @@ public static class DrawTheOddsSetup
         string[] bossSprites = { "SPADES_JACK", "HEARTS_QUEEN", "DIAMONDS_KING" };
         for (int i = 0; i < bosses.arraySize && i < bossSprites.Length; i++)
             bosses.GetArrayElementAtIndex(i).FindPropertyRelative("sprite").objectReferenceValue = LoadSprite(CardsDir + bossSprites[i] + ".png");
+        so.FindProperty("tutorialBoss").FindPropertyRelative("sprite").objectReferenceValue = LoadSprite(CardsDir + "CLUBS_ACE.png");
         so.ApplyModifiedPropertiesWithoutUndo();
         EditorUtility.SetDirty(config);
 
@@ -64,7 +65,9 @@ public static class DrawTheOddsSetup
         floor.transform.position = new Vector3(0f, -9.375f, 0f);
         floor.transform.localScale = new Vector3(42f, 3.75f, 1f);
 
-        var template = GameObject.Find("PlatformTemplate");
+        // Find() não acha objetos desativados: procura o template como filho do "Level".
+        var templateTransform = GameObject.Find("Level").transform.Find("PlatformTemplate");
+        var template = templateTransform != null ? templateTransform.gameObject : null;
         if (template == null)
         {
             template = GameObject.Find("Platform_C2");

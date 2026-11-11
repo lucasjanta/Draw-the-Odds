@@ -20,7 +20,8 @@ public class GameConfig : ScriptableObject
     [SerializeField] private int redrawsPerBoss = 3;
     [SerializeField] private float throwCooldown = 0.22f;
     [SerializeField] private float cardSpeed = 22f;
-    [SerializeField] private float cardHomingDegreesPerSecond = 160f;
+    [SerializeField] private float cardHomingDegreesPerSecond = 55f;
+    [SerializeField] private float cardHomingConeDegrees = 30f; // só corrige se a carta já vai mais ou menos na direção do chefe
 
     [Header("Pickups de carta")]
     [SerializeField] private int lowHandThreshold = 3;     // abaixo/igual disto surgem pacotes de carta
@@ -29,10 +30,9 @@ public class GameConfig : ScriptableObject
     [SerializeField, Range(0f, 1f)] private float specificSuitChance = 0.35f;
 
     [Header("Poderes (fusão)")]
-    [SerializeField] private Vector2 powerSpawnInterval = new Vector2(8f, 13f);
+    [SerializeField] private Vector2 powerSpawnInterval = new Vector2(4.5f, 7.5f);
     [SerializeField] private int maxPowersOnMap = 2;
-    [SerializeField] private float fusionTimeScale = 0.2f;
-    [SerializeField] private float fusionWindow = 6f;      // segundos reais para escolher
+    [SerializeField] private float fusionWindow = 10f;     // segundos reais para escolher (tempo parado)
     [SerializeField] private bool allowMixedSuits = true;  // juntar naipes diferentes → naipe sorteado
 
     [Header("Player")]
@@ -42,12 +42,16 @@ public class GameConfig : ScriptableObject
     [SerializeField] private List<BossData> bosses = new List<BossData>
     {
         new BossData("JACK", 12, 13, 2.6f, 1.1f, 1, 3, 8f, false, false, 0f, 0,
-            new Color32(0x1B, 0x10, 0x29, 0xFF), new Color32(0x2A, 0x24, 0x7A, 0xFF)),
+            new Color32(0x1B, 0x10, 0x29, 0xFF), new Color32(0x2A, 0x24, 0x7A, 0xFF), 0.06f),
         new BossData("QUEEN", 16, 20, 2.1f, 0.95f, 2, 4, 10f, true, true, 0f, 1,
-            new Color32(0x24, 0x0E, 0x22, 0xFF), new Color32(0x6B, 0x1F, 0x4E, 0xFF)),
+            new Color32(0x24, 0x0E, 0x22, 0xFF), new Color32(0x6B, 0x1F, 0x4E, 0xFF), 0.1f),
         new BossData("KING", 20, 26, 1.7f, 0.85f, 2, 6, 11.5f, true, false, 25f, 2,
-            new Color32(0x1E, 0x16, 0x08, 0xFF), new Color32(0x7A, 0x5A, 0x16, 0xFF)),
+            new Color32(0x1E, 0x16, 0x08, 0xFF), new Color32(0x7A, 0x5A, 0x16, 0xFF), 0.25f),
     };
+
+    [Header("Tutorial (miniboss Ás)")]
+    [SerializeField] private BossData tutorialBoss = new BossData("ACE", 6, 8, 3.2f, 1.4f, 1, 2, 6f, false, false, 0f, 0,
+        new Color32(0x12, 0x1A, 0x22, 0xFF), new Color32(0x1F, 0x4A, 0x5C, 0xFF), 0f, false);
 
     public Sprite CardBack => cardBack;
     public Sprite Square => square;
@@ -67,15 +71,16 @@ public class GameConfig : ScriptableObject
     public float ThrowCooldown => throwCooldown;
     public float CardSpeed => cardSpeed;
     public float CardHomingDegreesPerSecond => cardHomingDegreesPerSecond;
+    public float CardHomingConeDegrees => cardHomingConeDegrees;
     public int LowHandThreshold => lowHandThreshold;
     public int MinPackSize => minPackSize;
     public int MaxPackSize => maxPackSize;
     public float SpecificSuitChance => specificSuitChance;
     public Vector2 PowerSpawnInterval => powerSpawnInterval;
     public int MaxPowersOnMap => maxPowersOnMap;
-    public float FusionTimeScale => fusionTimeScale;
     public float FusionWindow => fusionWindow;
     public bool AllowMixedSuits => allowMixedSuits;
     public int PlayerMaxHp => playerMaxHp;
     public IReadOnlyList<BossData> Bosses => bosses;
+    public BossData TutorialBoss => tutorialBoss;
 }

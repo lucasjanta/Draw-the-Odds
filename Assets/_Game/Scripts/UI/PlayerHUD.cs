@@ -5,14 +5,15 @@ using UnityEngine;
 public class PlayerHUD : MonoBehaviour
 {
     private GameManager gm;
-    private RectTransform fill, ghost;
+    private RectTransform fill, ghost, dashFill;
+    private TextMeshProUGUI dashText;
     private TextMeshProUGUI hpText, redrawText, handText;
     private float ghostValue = 1f, fillValue = 1f;
 
     public static PlayerHUD Create(Transform parent, GameManager gm)
     {
         var panel = UIFactory.Image("PlayerHUD", parent, UIFactory.PanelColor);
-        panel.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(8f, -8f), new Vector2(176f, 42f));
+        panel.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(8f, -8f), new Vector2(176f, 56f));
         var hud = panel.gameObject.AddComponent<PlayerHUD>();
         hud.gm = gm;
 
@@ -26,10 +27,16 @@ public class PlayerHUD : MonoBehaviour
         hud.hpText.rectTransform.Stretch();
 
         hud.redrawText = UIFactory.Text("Redraw", panel.transform, "", 9f, new Color(0.85f, 0.85f, 1f));
-        hud.redrawText.rectTransform.Place(new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(8f, 4f), new Vector2(100f, 14f));
+        hud.redrawText.rectTransform.Place(new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(8f, 18f), new Vector2(100f, 14f));
+
+        hud.dashText = UIFactory.Text("Dash", panel.transform, "[SHIFT] DASH", 9f, new Color(0.85f, 0.85f, 1f));
+        hud.dashText.rectTransform.Place(new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(8f, 4f), new Vector2(80f, 14f));
+        UIFactory.Bar(panel.transform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(82f, 8f), new Vector2(86f, 6f),
+            new Color32(0x73, 0xD8, 0xFF, 0xFF), out hud.dashFill, out var dashGhost);
+        dashGhost.gameObject.SetActive(false);
 
         hud.handText = UIFactory.Text("HandCount", panel.transform, "", 9f, new Color(0.85f, 0.85f, 1f), TextAlignmentOptions.Right);
-        hud.handText.rectTransform.Place(new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-8f, 4f), new Vector2(70f, 14f));
+        hud.handText.rectTransform.Place(new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-8f, 18f), new Vector2(70f, 14f));
 
         gm.PlayerHealth.OnHealthChanged += hud.HandleHealth;
         gm.OnRedrawsChanged += hud.RefreshTexts;
@@ -61,5 +68,9 @@ public class PlayerHUD : MonoBehaviour
     {
         ghostValue = Mathf.MoveTowards(ghostValue, fillValue, Time.unscaledDeltaTime * 0.6f);
         UIFactory.SetBar(ghost, ghostValue);
+
+        float dash = gm.Player.DashCooldown01;
+        UIFactory.SetBar(dashFill, dash);
+        dashText.color = dash >= 1f ? Color.white : new Color(0.6f, 0.6f, 0.75f);
     }
 }

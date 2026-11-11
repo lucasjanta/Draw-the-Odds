@@ -6,6 +6,7 @@ public abstract class PlayerGroundedState : PlayerState
     // Retorna true se já trocou de estado (aí a filha para de processar).
     protected bool CheckCommonTransitions()
     {
+        if (player.TryStartDash()) return true;
         if (player.TryDropThrough()) { player.ChangeState(player.FallState); return true; }
         if (player.JumpBuffered) { player.ChangeState(player.JumpState); return true; }
         if (!player.IsGrounded) { player.ChangeState(player.FallState); return true; }

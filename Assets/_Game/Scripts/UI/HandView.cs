@@ -34,7 +34,6 @@ public class HandView : MonoBehaviour
 
         v.hand.OnCardAdded += v.HandleAdded;
         v.hand.OnCardRemoved += v.HandleRemoved;
-        v.hand.OnCardReplaced += v.HandleReplaced;
         v.hand.OnSelectionChanged += v.Refresh;
         gm.Fusion.OnChanged += v.Refresh;
         gm.Fusion.OnEnded += _ => v.Refresh();
@@ -57,12 +56,6 @@ public class HandView : MonoBehaviour
         views.RemoveAt(index);
         view.FlyAwayAndDestroy(new Vector2(0f, 260f));
         Refresh();
-    }
-
-    private void HandleReplaced(int index, Card card)
-    {
-        views[index].SetCard(card);
-        views[index].Punch();
     }
 
     private void Refresh()

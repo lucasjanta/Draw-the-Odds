@@ -13,6 +13,8 @@ public class PlayerJumpState : PlayerState
 
     public override void Tick()
     {
+        if (player.TryStartDash()) return;
+
         // Soltou o botão ainda subindo → corta a velocidade (pulo variável)
         if (!jumpCut && !player.JumpHeld)
         {

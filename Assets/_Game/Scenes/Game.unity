@@ -1191,6 +1191,10 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 64
   dropThroughTime: 0.5
+  dashSpeed: 24
+  dashTime: 0.16
+  dashCooldown: 1.4
+  afterImageColor: {r: 0.45, g: 0.85, b: 1, a: 0.55}
   currentStateName: 
 --- !u!114 &1407724781
 MonoBehaviour:
@@ -1222,6 +1226,7 @@ MonoBehaviour:
   invulnerableTime: 1.1
   knockbackVelocity: {x: 9, y: 10}
   knockbackLockTime: 0.25
+  cannotDie: 0
   forcedInvulnerable: 0
 --- !u!1001 &2099123670
 PrefabInstance:

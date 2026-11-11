@@ -21,6 +21,7 @@ public class PlayerCards : MonoBehaviour
         var mouse = Mouse.current;
         var keyboard = Keyboard.current;
         if (gm == null || mouse == null || keyboard == null || !gm.CanAct) return;
+        if (gm.Fusion.Resolving) return; // animação do merge: nada de input
 
         HandleSelection(gm, mouse, keyboard);
 

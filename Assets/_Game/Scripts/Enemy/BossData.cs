@@ -26,6 +26,7 @@ public class BossData
     [SerializeField] private float diceSpeed = 9f;
     [SerializeField] private bool canRain = true;
     [SerializeField] private bool canDash;
+    [SerializeField, Range(0f, 1f)] private float multiplyChance = 0.08f; // chance de um poder ser ×
 
     [Header("Fase")]
     [SerializeField] private int layoutIndex;
@@ -48,6 +49,7 @@ public class BossData
     public float DiceSpeed => diceSpeed;
     public bool CanRain => canRain;
     public bool CanDash => canDash;
+    public float MultiplyChance => multiplyChance;
     public int LayoutIndex => layoutIndex;
     public Color BackgroundColor => backgroundColor;
     public Color PlatformColor => platformColor;
@@ -56,8 +58,12 @@ public class BossData
 
     // Construtor usado só para criar os valores padrão dos 3 chefes.
     public BossData(string name, int hp, int maxNumber, float idle, float telegraph, int minDice, int maxDice,
-        float diceSpeed, bool canDash, bool rerollHalf, float rerollEvery, int layout, Color bg, Color platform)
+        float diceSpeed, bool canDash, bool rerollHalf, float rerollEvery, int layout, Color bg, Color platform,
+        float multiplyChance = 0.08f, bool canRain = true, int minNumber = 1)
     {
+        this.multiplyChance = multiplyChance;
+        this.canRain = canRain;
+        this.minNumber = minNumber;
         displayName = name;
         maxHp = hp;
         this.maxNumber = maxNumber;

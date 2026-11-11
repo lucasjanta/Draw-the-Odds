@@ -11,6 +11,10 @@ public class GameUI : MonoBehaviour
     private CanvasGroup bannerGroup, titleGroup, endGroup;
     private TextMeshProUGUI bannerTitle, bannerSub, endTitle, endBody;
     private Coroutine bannerRoutine;
+    private CanvasGroup promptGroup;
+    private RectTransform promptRect;
+    private TextMeshProUGUI promptText, promptContinue;
+    private bool promptVisible;
 
     public static GameUI Build(GameManager gm)
     {
@@ -29,7 +33,7 @@ public class GameUI : MonoBehaviour
         Transform root = go.transform;
 
         // Tinta azulada durante a câmera lenta
-        ui.slowTint = UIFactory.Image("SlowTint", root, new Color(0.3f, 0.45f, 1f, 0f));
+        ui.slowTint = UIFactory.Image("SlowTint", root, new Color(0.02f, 0.02f, 0.08f, 0f));
         ui.slowTint.rectTransform.Stretch();
 
         HandView.Create(root, gm);
@@ -49,6 +53,7 @@ public class GameUI : MonoBehaviour
         ui.bannerTitle.fontStyle = FontStyles.Bold;
         ui.bannerTitle.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 8f), new Vector2(600f, 44f));
 
+        ui.BuildPrompt(root);
         ui.titleGroup = BuildTitle(root);
         ui.endGroup = BuildEndPanel(root, out ui.endTitle, out ui.endBody);
         return ui;
@@ -76,19 +81,21 @@ public class GameUI : MonoBehaviour
             $"{SuitInfo.Colored(SuitInfo.Symbol(Suit.Diamonds) + " DIAMONDS", Suit.Diamonds)} damage + draw a card";
 
         string body =
-            "<color=#FFD447>A / D</color> move   <color=#FFD447>SPACE</color> jump   <color=#FFD447>S + SPACE</color> drop down\n" +
+            "<color=#FFD447>A / D</color> move   <color=#FFD447>SPACE</color> jump   <color=#FFD447>S + SPACE</color> drop down   <color=#FFD447>SHIFT</color> dash\n" +
             "<color=#FFD447>SCROLL</color> pick a card   <color=#FFD447>LEFT CLICK</color> throw it   <color=#FFD447>R</color> redraw hand (3x per boss)\n\n" +
             "Each hit tells you <color=#FF8A3D>▲ HIGHER</color> or <color=#5A9BFF>▼ LOWER</color> (warm = close).\n" +
             "EXACT = critical + new number   ±2 = 2 dmg   ±5 = 1 dmg   further = 0\n\n" +
             suits + "\n\n" +
-            "Grab a <color=#3CC86E>+</color> <color=#E84A5F>−</color> <color=#A85CF0>↔</color> orb: time slows down!\n" +
-            "<color=#FFD447>Q</color> / <color=#FFD447>E</color> put the selected card in a slot, <color=#FFD447>RIGHT CLICK</color> to fuse.\n" +
-            "Mixed suits fuse into one of the two suits at random.";
+            "Grab a <color=#3CC86E>+</color> <color=#E84A5F>−</color> <color=#FFD447>×</color> orb: TIME STOPS!\n" +
+            "<color=#FFD447>Q</color> / <color=#FFD447>E</color> put the selected card in a slot, <color=#FFD447>RIGHT CLICK</color> to merge.\n" +
+            "The result is a surprise. Mixed suits give one of the two at random.";
         var text = UIFactory.Text("Body", back.transform, body, 10f, Color.white, TextAlignmentOptions.Top);
         text.lineSpacing = 4f;
         text.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -98f), new Vector2(600f, 220f));
 
-        var start = UIFactory.Text("Start", back.transform, "CLICK TO START", 14f, Color.white, TextAlignmentOptions.Center);
+        var start = UIFactory.Text("Start", back.transform,
+            "CLICK  <size=10><color=#AAAACC>play with tutorial</color></size>      ENTER  <size=10><color=#AAAACC>skip tutorial</color></size>",
+            14f, Color.white, TextAlignmentOptions.Center);
         start.fontStyle = FontStyles.Bold;
         start.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 14f), new Vector2(400f, 20f));
         start.gameObject.AddComponent<Blink>();
@@ -110,6 +117,49 @@ public class GameUI : MonoBehaviour
         body.rectTransform.Place(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 1f), new Vector2(0f, 15f), new Vector2(600f, 140f));
         return group;
     }
+
+    // Caixa de instruções do tutorial. low = perto da mão (para não cobrir o painel de fusão).
+    private void BuildPrompt(Transform root)
+    {
+        var back = UIFactory.Image("Prompt", root, new Color(0.05f, 0.03f, 0.12f, 0.92f));
+        promptRect = back.rectTransform;
+        promptGroup = back.gameObject.AddComponent<CanvasGroup>();
+        promptGroup.alpha = 0f;
+        // Faixa amarela no topo da caixa (destaque)
+        var stripe = UIFactory.Image("Stripe", back.transform, new Color32(0xFF, 0xD4, 0x47, 0xFF));
+        stripe.rectTransform.anchorMin = new Vector2(0f, 1f);
+        stripe.rectTransform.anchorMax = new Vector2(1f, 1f);
+        stripe.rectTransform.pivot = new Vector2(0.5f, 1f);
+        stripe.rectTransform.sizeDelta = new Vector2(0f, 2f);
+        stripe.rectTransform.anchoredPosition = Vector2.zero;
+
+        promptText = UIFactory.Text("Text", back.transform, "", 11f, Color.white, TextAlignmentOptions.Center);
+        promptText.textWrappingMode = TextWrappingModes.Normal;
+        promptText.lineSpacing = 4f;
+        promptText.rectTransform.Stretch(8f);
+        promptText.rectTransform.offsetMin = new Vector2(10f, 16f);
+
+        promptContinue = UIFactory.Text("Continue", back.transform, "CLICK TO CONTINUE", 8f, new Color32(0xFF, 0xD4, 0x47, 0xFF), TextAlignmentOptions.Bottom);
+        promptContinue.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 4f), new Vector2(200f, 12f));
+        promptContinue.gameObject.AddComponent<Blink>();
+    }
+
+    public void ShowPrompt(string text, bool clickToContinue, bool low = false)
+    {
+        promptText.text = text;
+        promptContinue.gameObject.SetActive(clickToContinue);
+        promptText.rectTransform.offsetMin = new Vector2(10f, clickToContinue ? 16f : 6f);
+        // Altura proporcional ao número de linhas do texto
+        int lines = text.Split('\n').Length;
+        float height = 16f + lines * 15f + (clickToContinue ? 12f : 0f);
+        promptRect.Place(low ? new Vector2(0.5f, 0f) : new Vector2(0.5f, 1f), low ? new Vector2(0.5f, 0f) : new Vector2(0.5f, 1f),
+            low ? new Vector2(0f, 84f) : new Vector2(0f, -74f), new Vector2(470f, height));
+        promptVisible = true;
+        promptGroup.alpha = 0.2f;
+        promptRect.localScale = Vector3.one * 0.9f;
+    }
+
+    public void HidePrompt() => promptVisible = false;
 
     public void ShowTitle(bool show) => StartCoroutine(Fade(titleGroup, show ? 1f : 0f, show ? 0f : 0.3f));
 
@@ -166,7 +216,10 @@ public class GameUI : MonoBehaviour
 
     private void Update()
     {
-        float target = gm.Fusion.Active ? 0.16f : 0f;
+        promptGroup.alpha = Mathf.MoveTowards(promptGroup.alpha, promptVisible ? 1f : 0f, Time.unscaledDeltaTime * 6f);
+        promptRect.localScale = Vector3.one * Mathf.MoveTowards(promptRect.localScale.x, 1f, Time.unscaledDeltaTime * 2f);
+
+        float target = gm.Fusion.Active ? 0.5f : 0f; // escurece a tela com o tempo parado
         var c = slowTint.color;
         c.a = Mathf.MoveTowards(c.a, target, Time.unscaledDeltaTime * 0.8f);
         slowTint.color = c;

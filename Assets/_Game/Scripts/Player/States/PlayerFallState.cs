@@ -8,6 +8,8 @@ public class PlayerFallState : PlayerState
 
     public override void Tick()
     {
+        if (player.TryStartDash()) return;
+
         // Coyote time: saiu da borda há pouquinho e apertou pulo → ainda pode
         if (player.JumpBuffered && player.CanUseCoyote)
         {

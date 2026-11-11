@@ -10,7 +10,7 @@ public class CardProjectile : MonoBehaviour
 
     private Card card;
     private Transform target;
-    private float speed, homing, age;
+    private float speed, homing, cone, age;
     private Rigidbody2D body;
     private Transform spin;
     private bool consumed;
@@ -44,6 +44,7 @@ public class CardProjectile : MonoBehaviour
         p.target = target;
         p.speed = config.CardSpeed;
         p.homing = config.CardHomingDegreesPerSecond;
+        p.cone = config.CardHomingConeDegrees;
         p.body = body;
         p.spin = spin;
         body.linearVelocity = direction.normalized * p.speed;
@@ -68,6 +69,7 @@ public class CardProjectile : MonoBehaviour
         Vector2 toTarget = (Vector2)target.position - body.position;
         Vector2 v = body.linearVelocity;
         float angle = Vector2.SignedAngle(v, toTarget);
+        if (Mathf.Abs(angle) > cone) return; // jogou longe do chefe: sem ajuda
         float step = Mathf.Clamp(angle, -homing * Time.fixedDeltaTime, homing * Time.fixedDeltaTime);
         body.linearVelocity = Quaternion.Euler(0f, 0f, step) * v.normalized * speed;
     }

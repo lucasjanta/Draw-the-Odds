@@ -22,6 +22,11 @@ public class BossController : MonoBehaviour
     public event Action<int, int> OnHealthChanged;
     public event Action OnNumberChanged;
     public event Action OnDefeated;
+    public event Action OnTelegraph;      // começou a antecipação de um ataque (tutorial usa)
+    public event Action OnAttackFinished;
+
+    // Tutorial: o chefe só passeia até isto ser ligado.
+    public bool AttacksEnabled { get; set; } = true;
 
     private GameConfig config;
     private PlayerHealth player;
@@ -91,6 +96,11 @@ public class BossController : MonoBehaviour
 
         while (!IsDead)
         {
+            if (!AttacksEnabled)
+            {
+                yield return Wander(0.5f);
+                continue;
+            }
             yield return Wander(Data.IdleTime * UnityEngine.Random.Range(0.8f, 1.2f));
 
             var options = new List<Attack> { Attack.Volley, Attack.Volley };
@@ -99,6 +109,7 @@ public class BossController : MonoBehaviour
             Attack attack = options[UnityEngine.Random.Range(0, options.Count)];
 
             int face = UnityEngine.Random.Range(1, 7);
+            OnTelegraph?.Invoke();
             yield return Telegraph(attack, face);
             int count = Mathf.RoundToInt(Mathf.Lerp(Data.MinDice, Data.MaxDice, (face - 1) / 5f));
 
@@ -108,6 +119,7 @@ public class BossController : MonoBehaviour
                 case Attack.Rain: yield return Rain(count + 1); break;
                 case Attack.Dash: yield return Dash(face >= 4 ? 2 : 1); break;
             }
+            OnAttackFinished?.Invoke();
         }
     }
 

@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using UnityEngine;
 
@@ -20,6 +21,12 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private LayerMask groundLayer;
     [SerializeField] private float dropThroughTime = 0.5f; // tempo que o player pode apertar o botão de pulo para cair através do chão
 
+    [Header("Dash")]
+    [SerializeField] private float dashSpeed = 24f;
+    [SerializeField] private float dashTime = 0.16f;
+    [SerializeField] private float dashCooldown = 1.4f;   // "relativamente longo"
+    [SerializeField] private Color afterImageColor = new Color(0.45f, 0.85f, 1f, 0.55f);
+
     [Header("Debug (só leitura)")]
     [SerializeField] private string currentStateName;
 
@@ -39,6 +46,17 @@ public class PlayerController : MonoBehaviour
     public PlayerRunState RunState { get; private set; }
     public PlayerJumpState JumpState { get; private set; }
     public PlayerFallState FallState { get; private set; }
+    public PlayerDashState DashState { get; private set; }
+
+    // ---------- Dash ----------
+    public bool IsDashing => stateMachine.Current == DashState;
+    public float DashTime => dashTime;
+    public float DashCooldown01 => Mathf.Clamp01((Time.time - lastDashTime) / dashCooldown); // 1 = pronto
+
+    // Eventos usados pelo tutorial
+    public event Action OnJumped;
+    public event Action OnDroppedThrough;
+    public event Action OnDashed;
 
     // ---------- Internos ----------
     private Collider2D bodyCollider;
@@ -56,11 +74,16 @@ public class PlayerController : MonoBehaviour
 
     // Controles ligados? (desligado na morte, nas transições e na tela inicial)
     public bool ControlsEnabled { get; set; } = true;
+    // Input congelado temporariamente (tempo parado na fusão, pausas do tutorial).
+    public bool InputFrozen { get; set; }
 
     // NegativeInfinity = "nunca aconteceu" (Time.time - (-inf) = +inf, nunca é <= tolerância)
     private float lastJumpPressedTime = float.NegativeInfinity;
     private float lastGroundedTime = float.NegativeInfinity;
     private float dropUntilTime;
+    private float lastDashPressedTime = float.NegativeInfinity;
+    private float lastDashTime = float.NegativeInfinity;
+    private float savedGravity;
 
     // ================= Ciclo de vida =================
     private void Awake()
@@ -77,6 +100,7 @@ public class PlayerController : MonoBehaviour
         RunState = new PlayerRunState(this);
         JumpState = new PlayerJumpState(this);
         FallState = new PlayerFallState(this);
+        DashState = new PlayerDashState(this);
 
         stateMachine = new StateMachine();
     }
@@ -111,7 +135,7 @@ public class PlayerController : MonoBehaviour
     // ================= Sensores =================
     private void ReadInput()
     {
-        if (!ControlsEnabled)
+        if (!ControlsEnabled || InputFrozen)
         {
             MoveInput = Vector2.zero;
             JumpHeld = false;
@@ -120,6 +144,9 @@ public class PlayerController : MonoBehaviour
 
         MoveInput = input.Player.Move.ReadValue<Vector2>();
         JumpHeld = input.Player.Jump.IsPressed();
+
+        if (input.Player.Sprint.WasPressedThisFrame())   // "Sprint" = Shift no InputSystem_Actions
+            lastDashPressedTime = Time.time;
 
         if (input.Player.Jump.WasPressedThisFrame())
             lastJumpPressedTime = Time.time; // guarda QUANDO apertou (jump buffer)
@@ -224,6 +251,7 @@ public class PlayerController : MonoBehaviour
 
     public void DoJump()
     {
+        OnJumped?.Invoke();
         Body.linearVelocity = new Vector2(Body.linearVelocity.x, jumpVelocity);
         // "Consome" o buffer e o coyote para não pular 2x
         lastJumpPressedTime = float.NegativeInfinity;
@@ -249,8 +277,49 @@ public class PlayerController : MonoBehaviour
         lastJumpPressedTime = float.NegativeInfinity;
         lastGroundedTime = float.NegativeInfinity;   // sem coyote depois de descer
         dropUntilTime = Time.time + dropThroughTime;
+        OnDroppedThrough?.Invoke();
         StartCoroutine(IgnorePlatformFor(groundUnderFeet, dropThroughTime));
         return true;
+    }
+
+    // ================= Dash =================
+    // Os estados chamam isto: se o Shift foi apertado e o cooldown acabou, entra no DashState.
+    public bool TryStartDash()
+    {
+        bool pressed = Time.time - lastDashPressedTime <= 0.1f;
+        if (!pressed || Time.time < lastDashTime + dashCooldown || !ControlsEnabled) return false;
+        ChangeState(DashState);
+        return true;
+    }
+
+    public void BeginDash()
+    {
+        lastDashPressedTime = float.NegativeInfinity;
+        lastDashTime = Time.time;
+        // Direção: para onde está apertando; parado = para onde está olhando.
+        float dir = Mathf.Abs(MoveInput.x) > 0.01f ? Mathf.Sign(MoveInput.x) : (FacingRight ? 1f : -1f);
+        FaceTowards(dir, dashTime);
+        savedGravity = Body.gravityScale;
+        Body.gravityScale = 0f;
+        Body.linearVelocity = new Vector2(dir * dashSpeed, 0f);
+        knockbackUntil = 0f;
+        PlayOneShot("slide", dashTime);
+        OnDashed?.Invoke();
+    }
+
+    public void EndDash()
+    {
+        Body.gravityScale = savedGravity;
+        Body.linearVelocity = new Vector2(Body.linearVelocity.x * 0.35f, 0f);
+    }
+
+    // "Fantasma" do sprite atual que some aos poucos (rastro do dash).
+    public void SpawnAfterImage()
+    {
+        var ghost = Fx.MakeSprite("AfterImage", spriteRenderer.sprite, spriteRenderer.transform.position, afterImageColor, spriteRenderer.sortingOrder - 1);
+        ghost.flipX = spriteRenderer.flipX;
+        ghost.transform.localScale = spriteRenderer.transform.lossyScale;
+        ghost.gameObject.AddComponent<AfterImage>();
     }
 
     // Coroutine (≈ função com "await" do Godot): pausa no yield e continua depois.

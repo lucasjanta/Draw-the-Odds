@@ -16,7 +16,6 @@ public class Hand
     // Eventos (≈ signals do Godot)
     public event Action<int> OnCardAdded;          // índice novo
     public event Action<int, Card> OnCardRemoved;  // índice antigo, carta
-    public event Action<int, Card> OnCardReplaced; // índice, carta nova (troca de naipe)
     public event Action OnSelectionChanged;
 
     private readonly List<Card> cards = new List<Card>();
@@ -49,12 +48,6 @@ public class Hand
         SelectedIndex = cards.Count == 0 ? 0 : Math.Clamp(SelectedIndex, 0, cards.Count - 1);
         OnSelectionChanged?.Invoke();
         return card;
-    }
-
-    public void Replace(int index, Card card)
-    {
-        cards[index] = card;
-        OnCardReplaced?.Invoke(index, card);
     }
 
     public List<Card> RemoveAll()

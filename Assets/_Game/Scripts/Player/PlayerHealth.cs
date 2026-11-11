@@ -13,7 +13,10 @@ public class PlayerHealth : MonoBehaviour
     public int Current { get; private set; }
     public int Max => maxHp;
     public bool IsDead { get; private set; }
-    public bool IsInvulnerable => Time.time < invulnerableUntil || forcedInvulnerable;
+    public bool IsInvulnerable => Time.time < invulnerableUntil || forcedInvulnerable || controller.IsDashing;
+
+    // Tutorial: o player não morre (fica com 1 de vida).
+    public bool cannotDie;
 
     // Quando true (transições entre chefes) o player não toma dano.
     public bool forcedInvulnerable;
@@ -47,7 +50,7 @@ public class PlayerHealth : MonoBehaviour
     {
         if (IsDead || IsInvulnerable || amount <= 0) return false;
 
-        Current = Mathf.Max(0, Current - amount);
+        Current = Mathf.Max(cannotDie ? 1 : 0, Current - amount);
         OnDamaged?.Invoke(amount);
         OnHealthChanged?.Invoke(Current, maxHp);
         Fx.Shake(0.35f, 0.25f);

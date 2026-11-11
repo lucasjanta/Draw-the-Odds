@@ -5,7 +5,7 @@ using UnityEngine.UI;
 // Atalhos para montar UI em código (referência de tela: 640×360).
 public static class UIFactory
 {
-    public static readonly Color PanelColor = new Color(0.07f, 0.05f, 0.14f, 0.88f);
+    public static readonly Color PanelColor = new Color(0.07f, 0.05f, 0.14f, 0.95f);
     public static readonly Color BarBackColor = new Color(0f, 0f, 0f, 0.6f);
 
     public static RectTransform Rect(string name, Transform parent)
