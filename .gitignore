@@ -71,6 +71,7 @@ mono_crash.*
 tmpinst-dir.stamp
 
 # Builds
+/Builds/
 /*_BackUpThisFolder_ButDontShipItWithYourGame/
 /*_BurstDebugInformation_DoNotShip/
 *.apk

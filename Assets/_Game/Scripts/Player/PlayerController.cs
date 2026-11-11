@@ -48,6 +48,14 @@ public class PlayerController : MonoBehaviour
     private StateMachine stateMachine;
     private Collider2D groundUnderFeet;
     private string currentAnimation;
+    private string desiredAnimation;      // animação que o estado quer (guardada durante um "one shot")
+    private float oneShotUntil;           // até quando uma animação especial (arremesso/dano) tem prioridade
+    private float knockbackUntil;         // durante o knockback o input não controla o X
+    private float faceOverrideUntil;
+    private bool faceOverrideRight;
+
+    // Controles ligados? (desligado na morte, nas transições e na tela inicial)
+    public bool ControlsEnabled { get; set; } = true;
 
     // NegativeInfinity = "nunca aconteceu" (Time.time - (-inf) = +inf, nunca é <= tolerância)
     private float lastJumpPressedTime = float.NegativeInfinity;
@@ -85,6 +93,8 @@ public class PlayerController : MonoBehaviour
     private void Update()
     {
         ReadInput();
+        if (Time.time >= oneShotUntil && desiredAnimation != null && desiredAnimation != currentAnimation)
+            PlayAnimationNow(desiredAnimation);
         CheckGround();
         UpdateFacing();
         stateMachine.Tick();
@@ -101,6 +111,13 @@ public class PlayerController : MonoBehaviour
     // ================= Sensores =================
     private void ReadInput()
     {
+        if (!ControlsEnabled)
+        {
+            MoveInput = Vector2.zero;
+            JumpHeld = false;
+            return;
+        }
+
         MoveInput = input.Player.Move.ReadValue<Vector2>();
         JumpHeld = input.Player.Jump.IsPressed();
 
@@ -126,7 +143,8 @@ public class PlayerController : MonoBehaviour
 
     private void UpdateFacing()
     {
-        if (MoveInput.x > 0.01f) FacingRight = true;
+        if (Time.time < faceOverrideUntil) FacingRight = faceOverrideRight;
+        else if (MoveInput.x > 0.01f) FacingRight = true;
         else if (MoveInput.x < -0.01f) FacingRight = false;
 
         spriteRenderer.flipX = !FacingRight; // o sprite original olha para a direita
@@ -137,13 +155,68 @@ public class PlayerController : MonoBehaviour
 
     public void PlayAnimation(string clipName)
     {
-        if (currentAnimation == clipName) return; // evita reiniciar o clip todo frame
-        animator.Play(clipName);
+        desiredAnimation = clipName;
+        if (Time.time < oneShotUntil) return;      // uma animação especial está tocando: espera ela acabar
+        if (currentAnimation == clipName) return;  // evita reiniciar o clip todo frame
+        PlayAnimationNow(clipName);
+    }
+
+    private void PlayAnimationNow(string clipName)
+    {
+        animator.Play(clipName, 0, 0f);
         currentAnimation = clipName;
+    }
+
+    // Toca uma animação por cima do estado atual por "duration" segundos (ex.: arremesso).
+    public void PlayOneShot(string clipName, float duration)
+    {
+        oneShotUntil = Time.time + duration;
+        PlayAnimationNow(clipName);
+    }
+
+    // Vira o personagem para um lado por um tempo (para arremessar na direção do mouse).
+    public void FaceTowards(float directionX, float duration)
+    {
+        faceOverrideRight = directionX >= 0f;
+        faceOverrideUntil = Time.time + duration;
+    }
+
+    // Empurrão ao levar dano: o input horizontal fica ignorado por "lockTime".
+    public void Knockback(Vector2 velocity, float lockTime)
+    {
+        Body.linearVelocity = velocity;
+        knockbackUntil = Time.time + lockTime;
+    }
+
+    // Teleporta (início de cada chefe).
+    public void ResetTo(Vector2 position)
+    {
+        Body.position = position;
+        transform.position = position;
+        Body.linearVelocity = Vector2.zero;
+        knockbackUntil = 0f;
+        ChangeState(IdleState);
+    }
+
+    // Morte: trava os controles e congela a animação "die" no último quadro.
+    public void Die()
+    {
+        ControlsEnabled = false;
+        knockbackUntil = float.PositiveInfinity;
+        Body.linearVelocity = new Vector2(0f, Body.linearVelocity.y);
+        PlayOneShot("die", float.PositiveInfinity);
+        StartCoroutine(FreezeAnimatorAfter(0.7f));
+    }
+
+    private IEnumerator FreezeAnimatorAfter(float seconds)
+    {
+        yield return new WaitForSeconds(seconds);
+        animator.speed = 0f;
     }
 
     public void ApplyHorizontalMovement()
     {
+        if (Time.time < knockbackUntil) return; // empurrado: deixa a física levar
         float x = MoveInput.x * moveSpeed;
         float y = Mathf.Max(Body.linearVelocity.y, -maxFallSpeed); // limita a velocidade de queda
         Body.linearVelocity = new Vector2(x, y);
