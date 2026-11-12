@@ -35,7 +35,7 @@ public class CardProjectile : MonoBehaviour
         spin.SetParent(go.transform, false);
         var sr = Fx.MakeSprite("Sprite", config.Blank(card.suit), position, Color.white, 60, spin);
         sr.transform.localScale = Vector3.one * 0.5f;
-        var number = Fx.WorldText(card.Label, position, 7f, SuitInfo.GetColor(card.suit), 61, spin);
+        var number = Fx.WorldText(card.Label, position, 7f, SuitInfo.Ink(card.suit), 61, spin);
         number.outlineColor = Color.white;
         number.outlineWidth = 0.3f;
 

@@ -1,6 +1,7 @@
 using UnityEngine;
 
-// Dado arremessado pelo chefe. Causa 1 de dano ao encostar no player.
+// Dado (ou ficha de poker) arremessado pelo chefe. Causa 1 de dano ao encostar no player.
+// A ficha cai "girando como moeda" (achata no eixo X) em vez de rodar.
 [RequireComponent(typeof(Rigidbody2D))]
 public class DiceProjectile : MonoBehaviour
 {
@@ -9,6 +10,8 @@ public class DiceProjectile : MonoBehaviour
     private float life, spinSpeed, floorY;
     private int damage = 1;
     private SpriteRenderer sr;
+    private bool coinFlip;
+    private float age;
 
     public static DiceProjectile Spawn(GameConfig config, int face, Vector2 position, Vector2 velocity, float gravity, float floorY, float life = 5f)
     {
@@ -35,9 +38,41 @@ public class DiceProjectile : MonoBehaviour
         return d;
     }
 
+    // Ficha de poker: sprite já no tamanho final (20×20 px = 1,25 unidade), escala 1.
+    public static DiceProjectile SpawnChip(Sprite chip, Vector2 position, Vector2 velocity, float floorY, float life = 5f)
+    {
+        var go = new GameObject("Chip");
+        go.layer = LayerMask.NameToLayer("Enemy");
+        go.transform.position = position;
+
+        var body = go.AddComponent<Rigidbody2D>();
+        body.gravityScale = 0f;
+        body.linearVelocity = velocity;
+        body.interpolation = RigidbodyInterpolation2D.Interpolate;
+
+        var col = go.AddComponent<CircleCollider2D>();
+        col.isTrigger = true;
+        col.radius = 0.5f;
+
+        var d = go.AddComponent<DiceProjectile>();
+        d.sr = Fx.MakeSprite("Sprite", chip, position, Color.white, 70, go.transform);
+        d.life = life;
+        d.floorY = floorY;
+        d.coinFlip = true;
+        d.spinSpeed = Random.Range(7f, 10f); // velocidade do "flip"
+        return d;
+    }
+
     private void Update()
     {
-        sr.transform.Rotate(0f, 0f, spinSpeed * Time.deltaTime);
+        age += Time.deltaTime;
+        if (coinFlip)
+        {
+            // Achata e volta no X (parece uma moeda girando); mínimo 0,15 para nunca sumir.
+            float k = Mathf.Abs(Mathf.Cos(age * spinSpeed));
+            sr.transform.localScale = new Vector3(Mathf.Max(0.15f, k), 1f, 1f);
+        }
+        else sr.transform.Rotate(0f, 0f, spinSpeed * Time.deltaTime);
         life -= Time.deltaTime;
         bool outOfArena = Mathf.Abs(transform.position.x) > 22f || transform.position.y > 14f;
         if (life <= 0f || outOfArena || transform.position.y < floorY + 0.5f)

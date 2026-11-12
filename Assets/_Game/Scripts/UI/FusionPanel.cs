@@ -7,7 +7,7 @@ using UnityEngine.UI;
 // se juntam no centro, piscam e revelam o resultado (naipes diferentes = o naipe "gira" até parar).
 public class FusionPanel : MonoBehaviour
 {
-    private const float SlotScale = 1.4f;
+    private const float SlotScale = 1f;  // 58×80 já é grande; escala inteira mantém a pixel art nítida
     private const float SlotX = 72f;
 
     private GameManager gm;
@@ -61,7 +61,7 @@ public class FusionPanel : MonoBehaviour
         p.errorText.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 20f), new Vector2(300f, 14f));
 
         p.help = UIFactory.Text("Help", rt,
-            "<color=#FFD447>SCROLL</color> pick   <color=#FFD447>Q</color> / <color=#FFD447>E</color> place   <color=#FFD447>RIGHT CLICK</color> merge",
+            "<color=#FFD447>SCROLL</color> pick   <color=#FFD447>Q</color> / <color=#FFD447>E</color> place   <color=#FFD447>LEFT CLICK</color> merge   <color=#FFD447>RIGHT CLICK</color> skip",
             10f, new Color(1f, 1f, 1f, 0.85f), TextAlignmentOptions.Center);
         p.help.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 5f), new Vector2(300f, 14f));
 
@@ -238,7 +238,9 @@ public class FusionPanel : MonoBehaviour
         }
         else if (gm.State == GameManager.GameState.Playing)
         {
-            Fx.Popup("TIME UP", player + Vector3.up * 2.6f, new Color(1f, 0.5f, 0.5f), 6f, 1f);
+            // Sobrou tempo = o jogador pulou o poder (botão direito)
+            string msg = gm.Fusion.TimeLeft > 0f ? "SKIPPED" : "TIME UP";
+            Fx.Popup(msg, player + Vector3.up * 2.6f, new Color(1f, 0.5f, 0.5f), 6f, 1f);
         }
     }
 
@@ -248,7 +250,7 @@ public class FusionPanel : MonoBehaviour
         if (f.AcceptsInput)
         {
             group.alpha = Mathf.MoveTowards(group.alpha, 1f, Time.unscaledDeltaTime * 8f);
-            UIFactory.SetBar(timerFill.rectTransform, f.TimeLeft / f.Duration);
+            UIFactory.SetBar(timerFill.rectTransform, f.Unlimited ? 1f : f.TimeLeft / f.Duration);
         }
         else if (!f.Resolving)
         {

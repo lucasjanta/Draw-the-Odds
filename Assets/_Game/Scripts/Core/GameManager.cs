@@ -5,15 +5,18 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
-// Cérebro do jogo: fluxo (título → tutorial (Ás) → chefes 1..3 → vitória/derrota), mão, poderes e UI.
+// Cérebro do jogo: fluxo (menu principal → tutorial → chefes 1..3 → vitória/derrota), pausa, mão, poderes e UI.
 public class GameManager : MonoBehaviour
 {
     public enum GameState { Title, Transition, Playing, GameOver, Victory }
 
+    // Estatísticas da run (vão para o ranking). Sobrevivem ao "tentar de novo" (recarregar a cena).
     public class RunStats
     {
-        public int cardsThrown, criticals, fusions, damageTaken;
-        public float startTime;
+        public int cardsThrown, criticals, fusions, damageTaken, deaths;
+        public float startTime;       // Time.time quando o trecho atual começou
+        public float elapsedBefore;   // tempo acumulado das tentativas anteriores
+        public float Elapsed => elapsedBefore + (Time.time - startTime);
     }
 
     public static GameManager Instance { get; private set; }
@@ -21,6 +24,18 @@ public class GameManager : MonoBehaviour
     // Sobrevive ao recarregar a cena: "tentar de novo" volta no mesmo chefe, sem tela de título.
     private static int retryBossIndex;
     private static bool skipTitle;
+    private static int retryRedraws = -1;
+    private static RunStats carriedStats;    // stats da run guardadas ao morrer (o retry continua a mesma run)
+    private bool resumedRun;   // redraws que o player tinha ao começar o chefe (volta no retry)
+    private int redrawsAtBossStart;
+
+    // Opção de trilha (menu de pausa): 0 = automática (cada chefe com a sua), 1..n = sempre aquela música.
+    private const string MusicTrackKey = "musicTrack";
+    public static int MusicTrackChoice
+    {
+        get => PlayerPrefs.GetInt(MusicTrackKey, 0);
+        set { PlayerPrefs.SetInt(MusicTrackKey, value); PlayerPrefs.Save(); }
+    }
 
     [SerializeField] private GameConfig config;
     [SerializeField] private PlayerController player;
@@ -37,13 +52,14 @@ public class GameManager : MonoBehaviour
     public bool IsTutorial => BossIndex < 0;
     public int RedrawsLeft { get; private set; }
     public GameState State { get; private set; }
-    public RunStats Stats { get; } = new RunStats();
+    public RunStats Stats { get; private set; } = new RunStats();
     public BossData CurrentBossData { get; private set; }
+    public Suit CurrentBossSuit { get; private set; }
     public PickupSpawner Pickups { get; private set; }
 
     // O tutorial trava o input do jogador durante as pausas explicativas.
     public bool InputLocked { get; set; }
-    public bool CanAct => State == GameState.Playing && !PlayerHealth.IsDead && !InputLocked;
+    public bool CanAct => State == GameState.Playing && !PlayerHealth.IsDead && !InputLocked && !GameTime.Paused;
 
     public event Action OnRedrawsChanged;
     public event Action<BossController> OnBossSpawned;
@@ -57,16 +73,19 @@ public class GameManager : MonoBehaviour
     private void Awake()
     {
         Instance = this;
-        FusionController.SetTimeScale(1f);
+        GameTime.Reset(); // ao recarregar a cena, garante que nada ficou pausado/lento
 
         Hand = new Hand(config.MaxHandSize);
         Fusion = new FusionController(Hand, config);
+
+        // Física do player vem do GameConfig (velocidade, pulo, gravidade) para ajustar num lugar só.
+        player.ApplyTuning(config.PlayerMoveSpeed, config.PlayerJumpVelocity, config.PlayerGravityScale, config.PlayerMaxFallSpeed);
 
         PlayerHealth = player.GetComponent<PlayerHealth>();
         if (PlayerHealth == null) PlayerHealth = player.gameObject.AddComponent<PlayerHealth>();
         if (player.GetComponent<PlayerCards>() == null) player.gameObject.AddComponent<PlayerCards>();
 
-        level = new LevelBuilder(platformTemplate, floor);
+        level = new LevelBuilder(platformTemplate, floor, config);
         Pickups = gameObject.AddComponent<PickupSpawner>();
         Pickups.Init(this, level);
         ui = GameUI.Build(this);
@@ -77,11 +96,15 @@ public class GameManager : MonoBehaviour
         PlayerHealth.SetMax(config.PlayerMaxHp, true);
         PlayerHealth.OnDied += HandlePlayerDied;
         PlayerHealth.OnDamaged += amount => Stats.damageTaken += amount;
-        Fusion.OnEnded += success => { if (success) Stats.fusions++; };
+        Fusion.OnEnded += success => { if (success) { Stats.fusions++; AudioManager.Sfx(config.SfxFusion); } };
+        Fusion.OnStarted += () => AudioManager.Sfx(config.SfxPowerUp);
+        PlayerHealth.OnDamaged += _ => AudioManager.Sfx(config.SfxPlayerHurt);
         Stats.startTime = Time.time;
 
         if (skipTitle)
         {
+            if (carriedStats != null) { Stats = carriedStats; Stats.startTime = Time.time; resumedRun = true; }
+            carriedStats = null;
             StartCoroutine(BeginBoss(retryBossIndex));
         }
         else
@@ -92,6 +115,7 @@ public class GameManager : MonoBehaviour
             CurrentBossData = config.Bosses[0];
             ApplyLevel(CurrentBossData);
             ui.ShowTitle(true);
+            AudioManager.Music(config.MenuMusicIntro, config.MenuMusic);
         }
     }
 
@@ -102,30 +126,65 @@ public class GameManager : MonoBehaviour
 
     private void Update()
     {
-        Fusion.Tick();
-        player.InputFrozen = Fusion.Active || InputLocked; // tempo parado = personagem parado
+        if (!GameTime.Paused) Fusion.Tick(); // o relógio da fusão para junto com a pausa
+        player.InputFrozen = Fusion.Active || InputLocked || GameTime.Paused; // tempo parado = personagem parado
 
         var mouse = Mouse.current;
         var keyboard = Keyboard.current;
         bool click = mouse != null && mouse.leftButton.wasPressedThisFrame;
         bool enter = keyboard != null && keyboard.enterKey.wasPressedThisFrame;
         bool space = keyboard != null && keyboard.spaceKey.wasPressedThisFrame;
+        bool pauseKey = keyboard != null && (keyboard.escapeKey.wasPressedThisFrame || keyboard.pKey.wasPressedThisFrame);
 
         switch (State)
         {
-            case GameState.Title:
-                if (click) StartCoroutine(BeginTutorial());
-                else if (enter) StartCoroutine(BeginBoss(0));
+            case GameState.Playing:
+            case GameState.Transition:
+                if (pauseKey) TogglePause();
                 break;
             case GameState.GameOver:
-            case GameState.Victory:
                 if ((click || enter || space) && Time.unscaledTime >= acceptClickTime) Reload();
                 break;
+            // Vitória: a tela do ranking tem botões (e campo de nome), então clique solto não recarrega.
         }
+    }
 
-        // ESC pula o tutorial a qualquer momento
-        if (IsTutorial && State == GameState.Playing && keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
-            SkipTutorial();
+    // ===================== Menus e pausa =====================
+    // Chamado pelos botões do menu principal.
+    public void StartGame(bool withTutorial)
+    {
+        if (State != GameState.Title) return;
+        StartCoroutine(withTutorial ? BeginTutorial() : BeginBoss(0));
+    }
+
+    // ESC/P: abre ou fecha a pausa. Com as opções abertas, ESC volta para o menu de pausa.
+    private void TogglePause()
+    {
+        if (!GameTime.Paused) { GameTime.SetPaused(true); ui.Pause.Open(); }
+        else if (ui.Pause.OptionsOpen) ui.Pause.ShowOptions(false);
+        else ResumeGame();
+    }
+
+    public void ResumeGame()
+    {
+        ui.Pause.Close();
+        GameTime.SetPaused(false);
+    }
+
+    public void SkipTutorialFromPause()
+    {
+        if (!IsTutorial || State != GameState.Playing) return;
+        ResumeGame();
+        SkipTutorial();
+    }
+
+    public void BackToMainMenu()
+    {
+        retryRedraws = -1;
+        carriedStats = null;
+        retryBossIndex = 0;
+        skipTitle = false;
+        Reload();
     }
 
     // ===================== Fluxo =====================
@@ -155,7 +214,10 @@ public class GameManager : MonoBehaviour
         PlayerHealth.cannotDie = index < 0;
         PlayerHealth.SetMax(config.PlayerMaxHp, true);
 
-        RedrawsLeft = config.RedrawsPerBoss;
+        // Redraws valem para a RUN inteira: só enchem no começo (tutorial ou 1º chefe).
+        if (index <= 0) RedrawsLeft = config.RedrawsPerBoss;
+        if (retryRedraws >= 0) { RedrawsLeft = retryRedraws; retryRedraws = -1; } // "tentar de novo" devolve os do início do chefe
+        redrawsAtBossStart = RedrawsLeft;
         OnRedrawsChanged?.Invoke();
 
         if (startingHand != null)
@@ -163,13 +225,22 @@ public class GameManager : MonoBehaviour
             Hand.RemoveAll();
             foreach (var c in startingHand) { Hand.Add(c); yield return new WaitForSeconds(0.08f); }
         }
-        else yield return DealUpTo(config.StartingHandSize);
+        else
+        {
+            AudioManager.Sfx(config.SfxNewHand);
+            yield return DealUpTo(config.StartingHandSize);
+        }
     }
 
     private IEnumerator BeginBoss(int index)
     {
         var data = config.Bosses[index];
-        ui.ShowBanner($"BOSS {index + 1}/{config.Bosses.Count}", data.DisplayName, 2.2f);
+        // Começo de uma run nova (1º chefe, sem ser retry): zera as estatísticas (o tutorial não conta).
+        if (index == 0 && !resumedRun) Stats = new RunStats { startTime = Time.time };
+        resumedRun = false;
+        CurrentBossSuit = SuitInfo.Random(); // cada vez que um chefe surge, o naipe é sorteado
+        ui.ShowBanner($"BOSS {index + 1}/{config.Bosses.Count}", BossTitle(data), 2.2f);
+        PlayBossMusic(data);
         yield return PrepareFight(data, index);
         yield return new WaitForSeconds(0.6f);
 
@@ -185,10 +256,11 @@ public class GameManager : MonoBehaviour
     private IEnumerator BeginTutorial()
     {
         ui.ShowBanner("TUTORIAL", config.TutorialBoss.DisplayName, 1.6f);
+        AudioManager.Music(config.MenuMusicIntro, config.MenuMusic); // tutorial continua com a música do menu
         var hand = new[]
         {
             new Card(Suit.Clubs, 2), new Card(Suit.Spades, 7), new Card(Suit.Hearts, 4),
-            new Card(Suit.Diamonds, 5), new Card(Suit.Clubs, 1),
+            new Card(Suit.Diamonds, 5), new Card(Suit.Clubs, 1), new Card(Suit.Spades, 3), new Card(Suit.Hearts, 8),
         };
         yield return PrepareFight(config.TutorialBoss, -1, hand);
         PlayerHealth.forcedInvulnerable = false;
@@ -209,9 +281,30 @@ public class GameManager : MonoBehaviour
         StartCoroutine(BeginBoss(0));
     }
 
+    // Música do chefe, respeitando a opção de trilha do menu de pausa.
+    private void PlayBossMusic(BossData data)
+    {
+        var tracks = config.GameplayTracks();
+        int choice = MusicTrackChoice;
+        if (choice > 0 && choice <= tracks.Count) AudioManager.Music(tracks[choice - 1].intro, tracks[choice - 1].loop);
+        else if (data.MusicLoop != null) AudioManager.Music(data.MusicIntro, data.MusicLoop);
+        else AudioManager.Music(config.GameMusic);
+    }
+
+    // Chamado pelas opções ao trocar a trilha: aplica na hora se estiver lutando com um chefe.
+    public void ApplyMusicChoice()
+    {
+        if (IsTutorial || State == GameState.Title || State == GameState.Victory) return;
+        PlayBossMusic(CurrentBossData);
+    }
+
+    // Nome do chefe atual com o naipe (ex.: "JACK ♠").
+    private string BossTitle(BossData data) =>
+        data.HasSuits ? $"{data.DisplayName} {SuitInfo.Colored(SuitInfo.Symbol(CurrentBossSuit), CurrentBossSuit)}" : data.DisplayName;
+
     public BossController SpawnBoss(BossData data)
     {
-        Boss = BossController.Spawn(config, data, PlayerHealth, LevelBuilder.FloorTop);
+        Boss = BossController.Spawn(config, data, CurrentBossSuit, PlayerHealth, LevelBuilder.FloorTop);
         Boss.OnHit += HandleBossHit;
         Boss.OnDefeated += HandleBossDefeated;
         OnBossSpawned?.Invoke(Boss);
@@ -221,6 +314,10 @@ public class GameManager : MonoBehaviour
     private void HandleBossHit(HitResult r)
     {
         if (r.isHeal) PlayerHealth.Heal(r.amount);
+        if (r.isCritical) AudioManager.Sfx(config.SfxCritical, 1f, 0f);
+        else if (r.isHeal) AudioManager.Sfx(config.SfxHeal);
+        else if (r.amount > 0) AudioManager.Sfx(config.SfxHit);
+        else AudioManager.Sfx(config.SfxMiss, 0.45f, 0.15f); // acertou longe do número: som fraco
         if (r.isCritical) Stats.criticals++;
         if (r.bonusCards > 0)
         {
@@ -235,6 +332,7 @@ public class GameManager : MonoBehaviour
     {
         State = GameState.Transition;
         PlayerHealth.forcedInvulnerable = true;
+        AudioManager.Sfx(config.SfxBossDefeated, 1f, 0f);
         Fusion.Cancel();
         Pickups.StopAndClear();
         StartCoroutine(AfterBossDefeated());
@@ -256,7 +354,7 @@ public class GameManager : MonoBehaviour
             yield break;
         }
 
-        ui.ShowBanner("DEFEATED", CurrentBossData.DisplayName + " FOLDED!", 2f);
+        ui.ShowBanner("DEFEATED", BossTitle(CurrentBossData) + " FOLDED!", 2f);
         yield return new WaitForSeconds(2.4f);
 
         if (BossIndex + 1 < config.Bosses.Count)
@@ -270,7 +368,9 @@ public class GameManager : MonoBehaviour
             retryBossIndex = 0;
             skipTitle = false;
             acceptClickTime = Time.unscaledTime + 1.5f;
-            ui.ShowVictory(Stats, Time.time - Stats.startTime);
+            AudioManager.Sfx(config.SfxVictory, 1f, 0f);
+            AudioManager.Music(config.MenuMusicIntro, config.MenuMusic, 3f);
+            ui.ShowVictory(Stats, Stats.Elapsed);
         }
     }
 
@@ -279,6 +379,10 @@ public class GameManager : MonoBehaviour
         State = GameState.GameOver;
         Fusion.Cancel();
         retryBossIndex = Mathf.Max(0, BossIndex);
+        retryRedraws = IsTutorial ? -1 : redrawsAtBossStart;
+        Stats.deaths++;
+        Stats.elapsedBefore = Stats.Elapsed;
+        carriedStats = IsTutorial ? null : Stats;
         skipTitle = true;
         acceptClickTime = Time.unscaledTime + 1.5f;
         StartCoroutine(GameOverSequence());
@@ -294,7 +398,7 @@ public class GameManager : MonoBehaviour
 
     private void Reload()
     {
-        FusionController.SetTimeScale(1f);
+        GameTime.Reset();
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
@@ -313,6 +417,7 @@ public class GameManager : MonoBehaviour
             if (!Hand.Add(c)) break;
             added++;
         }
+        if (added > 0) AudioManager.Sfx(config.SfxCardDraw);
         return added;
     }
 
@@ -333,6 +438,7 @@ public class GameManager : MonoBehaviour
         if (!CanAct || Fusion.Active || RedrawsLeft <= 0) return;
         RedrawsLeft--;
         Hand.RemoveAll();
+        AudioManager.Sfx(config.SfxNewHand);
         StartCoroutine(DealUpTo(config.StartingHandSize));
         OnRedrawsChanged?.Invoke();
         OnRedraw?.Invoke();
@@ -405,6 +511,47 @@ public class GameManager : MonoBehaviour
         if (Instance == null) return "no";
         Instance.PlayerHealth.forcedInvulnerable = !Instance.PlayerHealth.forcedInvulnerable;
         return "god " + Instance.PlayerHealth.forcedInvulnerable;
+    }
+
+    // "toggle" | "options" | "resume" | "menu" (simula o menu de pausa sem teclado)
+    public static string DebugPause(string arg)
+    {
+        var gm = Instance;
+        if (gm == null) return "no game";
+        switch (arg)
+        {
+            case "options": gm.ui.Pause.ShowOptions(true); break;
+            case "resume": gm.ResumeGame(); break;
+            case "menu": gm.BackToMainMenu(); break;
+            default: gm.TogglePause(); break;
+        }
+        return $"paused={GameTime.Paused} ts={Time.timeScale}";
+    }
+
+    public static string DebugRain(string count)
+    {
+        if (Instance == null || Instance.Boss == null) return "no boss";
+        Instance.Boss.DebugRain(int.Parse(count));
+        return "rain";
+    }
+
+    public static string DebugJokers(string count)
+    {
+        if (Instance == null || Instance.Boss == null) return "no boss";
+        Instance.Boss.DebugJokers(int.Parse(count));
+        return "jokers";
+    }
+
+    // Mostra a tela de vitória com números de exemplo (testa o ranking sem jogar tudo).
+    public static string DebugVictory()
+    {
+        var gm = Instance;
+        if (gm == null) return "no game";
+        gm.Stats = new RunStats { cardsThrown = 64, criticals = 7, fusions = 5, damageTaken = 9, deaths = 1, startTime = Time.time, elapsedBefore = 333f };
+        gm.State = GameState.Victory;
+        gm.ui.ShowTitle(false);
+        gm.ui.ShowVictory(gm.Stats, gm.Stats.Elapsed);
+        return "victory";
     }
 
     public static string DebugState()

@@ -47,7 +47,7 @@ public class BossHUD : MonoBehaviour
         boss = b;
         history.Clear();
         historyText.text = "-";
-        nameText.text = b.Data.DisplayName;
+        nameText.text = b.Title;
         rangeText.text = $"NUMBER ? ({b.Data.MinNumber}–{b.Data.MaxNumber})";
         fillValue = ghostValue = 1f;
         UIFactory.SetBar(fill, 1f);

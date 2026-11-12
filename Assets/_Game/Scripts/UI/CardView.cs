@@ -3,11 +3,12 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Uma carta na UI: sprite BLANK do naipe + número no canto (estilo baralho).
+// Uma carta na UI: sprite ui_<naipe> (58×80, já tem os naipes nos cantos) + número por cima,
+// em cima do naipe pequeno (canto superior esquerdo) e de cabeça para baixo no canto inferior direito.
 // Anima suavemente até targetPosition/targetRotation/targetScale (tempo real).
 public class CardView : MonoBehaviour
 {
-    public const float Width = 46f, Height = 66f;
+    public const float Width = 58f, Height = 80f; // = tamanho do sprite em pixels (escala 1 = pixel perfeito)
     private static readonly Color SelectedOutline = new Color32(0x3A, 0x8B, 0xFF, 0xFF);
 
     public RectTransform Rect { get; private set; }
@@ -43,17 +44,19 @@ public class CardView : MonoBehaviour
         v.face = UIFactory.Image("Face", rt, Color.white);
         v.face.rectTransform.Stretch();
 
+        // O naipe pequeno do sprite fica em x 3–7, y 18–23 (a partir do topo): o número vai logo acima dele.
+        // Peso Regular: no Bold os números da Silkscreen ficavam embolados.
         v.number = UIFactory.Text("Number", rt, "", 16f, Color.black, TextAlignmentOptions.TopLeft);
-        v.number.fontStyle = FontStyles.Bold;
-        v.number.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(5f, -2f), new Vector2(30f, 20f));
+        v.number.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(2f, -1f), new Vector2(30f, 17f));
 
-        v.cornerNumber = UIFactory.Text("Corner", rt, "", 9f, Color.black, TextAlignmentOptions.BottomRight);
-        v.cornerNumber.fontStyle = FontStyles.Bold;
-        v.cornerNumber.rectTransform.Place(new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-5f, 3f), new Vector2(30f, 12f));
+        // Mesmo número no canto oposto, girado 180° (pivô no centro da caixa para girar no lugar).
+        v.cornerNumber = UIFactory.Text("Corner", rt, "", 16f, Color.black, TextAlignmentOptions.TopLeft);
+        v.cornerNumber.rectTransform.Place(new Vector2(1f, 0f), new Vector2(0.5f, 0.5f), new Vector2(-2f - 15f, 1f + 8.5f), new Vector2(30f, 17f));
+        v.cornerNumber.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 180f);
 
         v.mystery = UIFactory.Text("Mystery", rt, "", 15f, Color.white, TextAlignmentOptions.Bottom);
         v.mystery.fontStyle = FontStyles.Bold;
-        v.mystery.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 4f), new Vector2(46f, 14f));
+        v.mystery.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 6f), new Vector2(Width, 14f));
         v.mystery.gameObject.SetActive(false);
 
         v.tagBack = UIFactory.Image("TagBack", rt, Color.white);
@@ -70,7 +73,7 @@ public class CardView : MonoBehaviour
         face.sprite = config.Blank(card.suit);
         face.color = Color.white;
         outline.sprite = face.sprite;
-        Color c = SuitInfo.GetColor(card.suit);
+        Color c = SuitInfo.Ink(card.suit); // preto ♠♣ / vermelho ♥♦, igual à arte
         number.text = card.Label;
         number.color = c;
         cornerNumber.text = card.Label;

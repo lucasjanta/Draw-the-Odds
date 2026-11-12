@@ -7,8 +7,10 @@ using UnityEngine;
 public class BossData
 {
     [SerializeField] private string displayName = "JACK";
-    [SerializeField] private Sprite sprite;
-    [SerializeField] private float spriteScale = 1.7f;
+    [SerializeField] private Sprite sprite;                       // usado quando não há sprites por naipe (ex.: coringa do tutorial)
+    [Tooltip("Um sprite por naipe, na ordem do enum Suit: Clubs, Spades, Hearts, Diamonds. Cada vez que o chefe surge, sorteia um.")]
+    [SerializeField] private Sprite[] suitSprites = new Sprite[4];
+    [SerializeField] private float spriteScale = 1f;              // pixel art: sempre 1 (sprites já no tamanho final)
 
     [Header("Vida e número")]
     [SerializeField] private int maxHp = 12;
@@ -20,13 +22,14 @@ public class BossData
     [Header("Ataques")]
     [SerializeField] private float moveSpeed = 5f;
     [SerializeField] private float idleTime = 2.4f;        // pausa entre ataques
-    [SerializeField] private float telegraphTime = 1.0f;   // antecipação (dado rolando)
-    [SerializeField] private int minDice = 1;
-    [SerializeField] private int maxDice = 3;
-    [SerializeField] private float diceSpeed = 9f;
-    [SerializeField] private bool canRain = true;
-    [SerializeField] private bool canDash;
+    [SerializeField] private float telegraphTime = 1.0f;   // antecipação (dado rolando + face à mostra)
+    [Tooltip("O dado da antecipação escolhe o ataque: elemento 0 = face 1 ... elemento 5 = face 6.")]
+    [SerializeField] private BossAttack[] dieFaces = new BossAttack[0];
     [SerializeField, Range(0f, 1f)] private float multiplyChance = 0.08f; // chance de um poder ser ×
+
+    [Header("Música (intro toca 1x e emenda no loop)")]
+    [SerializeField] private AudioClip musicIntro;
+    [SerializeField] private AudioClip musicLoop;
 
     [Header("Fase")]
     [SerializeField] private int layoutIndex;
@@ -35,6 +38,10 @@ public class BossData
 
     public string DisplayName => displayName;
     public Sprite Sprite => sprite;
+    public bool HasSuits => suitSprites != null && suitSprites.Length == 4 && suitSprites[0] != null;
+
+    // Sprite do chefe para um naipe (cai no sprite único se não houver sprites por naipe).
+    public Sprite SpriteFor(Suit suit) => HasSuits && suitSprites[(int)suit] != null ? suitSprites[(int)suit] : sprite;
     public float SpriteScale => spriteScale;
     public int MaxHp => maxHp;
     public int MinNumber => minNumber;
@@ -44,39 +51,38 @@ public class BossData
     public float MoveSpeed => moveSpeed;
     public float IdleTime => idleTime;
     public float TelegraphTime => telegraphTime;
-    public int MinDice => minDice;
-    public int MaxDice => maxDice;
-    public float DiceSpeed => diceSpeed;
-    public bool CanRain => canRain;
-    public bool CanDash => canDash;
+    public int FaceCount => dieFaces != null ? dieFaces.Length : 0;
+
+    // Ataque de uma face (1..6). Se a lista tiver menos de 6, as faces "dão a volta" na lista.
+    public BossAttack AttackForFace(int face)
+    {
+        if (FaceCount == 0) return new BossAttack(BossAttackType.Volley, 2, 9f);
+        return dieFaces[(Mathf.Clamp(face, 1, 6) - 1) % FaceCount] ?? new BossAttack();
+    }
     public float MultiplyChance => multiplyChance;
     public int LayoutIndex => layoutIndex;
+    public AudioClip MusicIntro => musicIntro;
+    public AudioClip MusicLoop => musicLoop;
     public Color BackgroundColor => backgroundColor;
     public Color PlatformColor => platformColor;
 
     public BossData() { }
 
-    // Construtor usado só para criar os valores padrão dos 3 chefes.
-    public BossData(string name, int hp, int maxNumber, float idle, float telegraph, int minDice, int maxDice,
-        float diceSpeed, bool canDash, bool rerollHalf, float rerollEvery, int layout, Color bg, Color platform,
-        float multiplyChance = 0.08f, bool canRain = true, int minNumber = 1)
+    // Construtor usado só para criar os valores padrão dos chefes.
+    public BossData(string name, int hp, int maxNumber, float idle, float telegraph, bool rerollHalf, float rerollEvery,
+        int layout, Color bg, Color platform, float multiplyChance, params BossAttack[] faces)
     {
-        this.multiplyChance = multiplyChance;
-        this.canRain = canRain;
-        this.minNumber = minNumber;
         displayName = name;
         maxHp = hp;
         this.maxNumber = maxNumber;
         idleTime = idle;
         telegraphTime = telegraph;
-        this.minDice = minDice;
-        this.maxDice = maxDice;
-        this.diceSpeed = diceSpeed;
-        this.canDash = canDash;
         rerollAtHalfHp = rerollHalf;
         rerollEverySeconds = rerollEvery;
         layoutIndex = layout;
         backgroundColor = bg;
         platformColor = platform;
+        this.multiplyChance = multiplyChance;
+        dieFaces = faces;
     }
 }

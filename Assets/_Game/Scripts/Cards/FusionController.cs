@@ -1,12 +1,12 @@
 using System;
 using UnityEngine;
 
-// Janela de fusão: o TEMPO PARA, o jogador põe 2 cartas nos slots (Q e E) e confirma com o botão direito.
+// Janela de fusão: o TEMPO PARA, o jogador põe 2 cartas nos slots (Q e E) e confirma com o botão ESQUERDO.
+// O botão direito pula o poder (o orbe é gasto sem usar).
 // Depois de confirmar, o tempo continua parado enquanto o painel mostra a animação do merge
 // (fase "Resolving"); o painel chama FinishResolve() no fim e o jogo volta.
 public class FusionController
 {
-    private const float DefaultFixedDelta = 0.02f;
 
     public bool Active { get; private set; }        // janela aberta (inclui a animação)
     public bool Resolving { get; private set; }     // animação do merge tocando
@@ -17,6 +17,8 @@ public class FusionController
     public float Duration { get; private set; }
     public bool BothSlotsFilled => SlotA >= 0 && SlotB >= 0;
     public bool AcceptsInput => Active && !Resolving;
+    // Tutorial: sem limite de tempo (o relógio não anda).
+    public bool Unlimited { get; set; }
 
     public event Action OnStarted;
     public event Action OnChanged;
@@ -53,7 +55,7 @@ public class FusionController
 
     public void Tick()
     {
-        if (!AcceptsInput) return;
+        if (!AcceptsInput || Unlimited) return;
         TimeLeft -= Time.unscaledDeltaTime; // tempo REAL
         if (TimeLeft <= 0f) End(false);
     }
@@ -114,6 +116,13 @@ public class FusionController
         editingHand = false;
     }
 
+    // Botão direito: desiste deste poder (o orbe já foi gasto).
+    public void Skip()
+    {
+        if (!AcceptsInput) return;
+        End(false);
+    }
+
     public void Cancel()
     {
         if (!Active) return;
@@ -130,10 +139,6 @@ public class FusionController
         OnEnded?.Invoke(success);
     }
 
-    public static void SetTimeScale(float scale)
-    {
-        Time.timeScale = scale;
-        // fixedDeltaTime acompanha a câmera lenta (física suave); com o tempo parado não precisa mudar.
-        if (scale > 0f) Time.fixedDeltaTime = DefaultFixedDelta * scale;
-    }
+    // Mantido por compatibilidade: quem controla o tempo agora é o GameTime (que respeita a pausa).
+    public static void SetTimeScale(float scale) => GameTime.SetScale(scale);
 }

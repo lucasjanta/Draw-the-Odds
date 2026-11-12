@@ -93,7 +93,7 @@ public class PickupSpawner : MonoBehaviour
         var cfg = gm.Config;
         int count = Random.Range(cfg.MinPackSize, cfg.MaxPackSize + 1);
         bool specific = Random.value < cfg.SpecificSuitChance;
-        Suit suit = SuitInfo.Random();
+        Suit suit = cfg.RandomCardSuit();
         var cards = new List<Card>();
         for (int i = 0; i < count; i++) cards.Add(specific ? Card.RandomOfSuit(suit) : Card.Random());
 
@@ -104,10 +104,19 @@ public class PickupSpawner : MonoBehaviour
     public void SpawnPower(PowerType type)
     {
         Vector2 pos = level.RandomSpawnPoint(gm.Player.transform.position, 7f);
-        powers.Add(PowerPickup.Spawn(type, pos));
+        var life = gm.Config.PowerLifetime;
+        powers.Add(PowerPickup.Spawn(type, pos, Random.Range(life.x, life.y)));
     }
 
-    public void SpawnPowerAt(PowerType type, Vector2 position) => powers.Add(PowerPickup.Spawn(type, position));
+    // lifetime 0 = o orbe não some sozinho (usado no tutorial).
+    public void SpawnPowerAt(PowerType type, Vector2 position, float lifetime) => powers.Add(PowerPickup.Spawn(type, position, lifetime));
+
+    // Remove só os orbes (o tutorial usa ao voltar uma dica).
+    public void ClearPowers()
+    {
+        foreach (var p in powers) if (p != null) Destroy(p.gameObject);
+        powers.Clear();
+    }
 
     public bool HasPowerOnMap
     {

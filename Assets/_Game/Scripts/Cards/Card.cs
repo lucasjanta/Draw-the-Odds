@@ -17,8 +17,13 @@ public struct Card
         this.value = value;
     }
 
-    public static Card Random() =>
-        new Card(SuitInfo.Random(), UnityEngine.Random.Range(MinBaseValue, MaxBaseValue + 1));
+    // Naipe com os pesos do GameConfig (Copas e Ouros mais raros); valor uniforme 1..13.
+    public static Card Random()
+    {
+        var gm = GameManager.Instance;
+        Suit suit = gm != null && gm.Config != null ? gm.Config.RandomCardSuit() : SuitInfo.Random();
+        return new Card(suit, UnityEngine.Random.Range(MinBaseValue, MaxBaseValue + 1));
+    }
 
     public static Card RandomOfSuit(Suit suit) =>
         new Card(suit, UnityEngine.Random.Range(MinBaseValue, MaxBaseValue + 1));

@@ -85,6 +85,16 @@ public class PlayerController : MonoBehaviour
     private float lastDashTime = float.NegativeInfinity;
     private float savedGravity;
 
+    // Valores de movimento vindos do GameConfig (o GameManager chama no Awake dele).
+    // Usa GetComponent direto porque pode rodar antes do Awake deste script.
+    public void ApplyTuning(float move, float jump, float gravityScale, float maxFall)
+    {
+        moveSpeed = move;
+        jumpVelocity = jump;
+        maxFallSpeed = maxFall;
+        GetComponent<Rigidbody2D>().gravityScale = gravityScale;
+    }
+
     // ================= Ciclo de vida =================
     private void Awake()
     {

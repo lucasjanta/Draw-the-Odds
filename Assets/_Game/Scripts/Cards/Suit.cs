@@ -32,6 +32,12 @@ public static class SuitInfo
         _ => "damage + draw a card",
     };
 
+    // "Tinta" impressa nas cartas (mesma paleta da arte): preto para ♠♣, vermelho para ♥♦.
+    // Usada nos números desenhados por cima das cartas; GetColor continua para efeitos e HUD.
+    public static Color Ink(Suit suit) => suit == Suit.Clubs || suit == Suit.Spades
+        ? new Color32(0x1E, 0x1E, 0x28, 0xFF)
+        : new Color32(0xDE, 0x28, 0x00, 0xFF);
+
     public static Suit Random() => (Suit)UnityEngine.Random.Range(0, Count);
 
     // Texto com a cor do naipe (rich text do TextMeshPro).
