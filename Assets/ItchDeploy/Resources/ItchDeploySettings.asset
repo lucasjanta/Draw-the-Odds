@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 652b2ead276f52a4a85b6b6630a5636b, type: 3}
+  m_Name: ItchDeploySettings
+  m_EditorClassIdentifier: ItchDeploy.Editor::ItchDeploy.Editor.ItchDeploySettings
+  itchUserName: 
+  itchGameSlug: 
+  itchOAuthClientId: 
+  autoDeployAfterBuild: 1
+  webglCompression: 2
+  channelMappings:
+  - buildTarget: StandaloneWindows64
+    channel: windows
+    channelSuffix: 
+    active: 1
+  - buildTarget: StandaloneLinux64
+    channel: linux
+    channelSuffix: 
+    active: 1
+  - buildTarget: StandaloneOSX
+    channel: mac
+    channelSuffix: 
+    active: 1
+  - buildTarget: WebGL
+    channel: html5
+    channelSuffix: 
+    active: 1
+  - buildTarget: Android
+    channel: android
+    channelSuffix: 
+    active: 1
+  - buildTarget: iOS
+    channel: ios
+    channelSuffix: 
+    active: 1
+  _syncedFromConfig: 1

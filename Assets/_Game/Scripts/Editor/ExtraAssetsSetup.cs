@@ -41,7 +41,7 @@ public static class ExtraAssetsSetup
         var so = new SerializedObject(config);
         SetArray(so.FindProperty("chips"), Sprite(Art + "Chips/chip_red.png"), Sprite(Art + "Chips/chip_black.png"),
             Sprite(Art + "Chips/chip_blue.png"), Sprite(Art + "Chips/chip_white.png"));
-        SetArray(so.FindProperty("props"), Sprite(Art + "Props/pawn.png"), Sprite(Art + "Props/rook.png"), Sprite(Art + "Props/marble.png"));
+        SetArray(so.FindProperty("props"), Sprite(Art + "Props/pawn.png"), Sprite(Art + "Props/rook.png"));
         so.FindProperty("felt").objectReferenceValue = Sprite(Art + "Tiles/felt_9slice.png");
         so.FindProperty("startingHandSize").intValue = 7;
 

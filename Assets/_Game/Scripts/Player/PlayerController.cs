@@ -87,8 +87,9 @@ public class PlayerController : MonoBehaviour
 
     // Valores de movimento vindos do GameConfig (o GameManager chama no Awake dele).
     // Usa GetComponent direto porque pode rodar antes do Awake deste script.
-    public void ApplyTuning(float move, float jump, float gravityScale, float maxFall)
+    public void ApplyTuning(float move, float jump, float gravityScale, float maxFall, float dashCooldown)
     {
+        this.dashCooldown = dashCooldown;
         moveSpeed = move;
         jumpVelocity = jump;
         maxFallSpeed = maxFall;

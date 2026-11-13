@@ -46,6 +46,13 @@ public class PlayerHealth : MonoBehaviour
         OnHealthChanged?.Invoke(Current, maxHp);
     }
 
+    // Define a vida atual direto (retry volta com a vida do início do chefe). Não dispara dano/cura.
+    public void SetCurrent(int value)
+    {
+        Current = Mathf.Clamp(value, 1, maxHp);
+        OnHealthChanged?.Invoke(Current, maxHp);
+    }
+
     public bool Damage(int amount, Vector2 fromPosition)
     {
         if (IsDead || IsInvulnerable || amount <= 0) return false;

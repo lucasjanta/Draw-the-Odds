@@ -29,6 +29,9 @@ public class LevelBuilder
     private readonly SpriteRenderer floor;
     private readonly GameConfig config;
     private SpriteRenderer floorFelt;
+    private SpriteRenderer background;
+    private readonly SpriteRenderer[] wallFelts = new SpriteRenderer[2];
+    private readonly Transform[] walls = new Transform[2];
     private readonly Transform root;
     private readonly List<GameObject> spawned = new List<GameObject>();
     private readonly List<Surface> surfaces = new List<Surface>();
@@ -42,7 +45,18 @@ public class LevelBuilder
         this.config = config;
         root = new GameObject("Generated Platforms").transform;
         if (template != null) template.gameObject.SetActive(false);
+
+        // Paredes da cena (colisores). Entram um pouco na tela para o feltro delas aparecer.
+        var left = GameObject.Find("WallLeft");
+        var right = GameObject.Find("WallRight");
+        walls[0] = left != null ? left.transform : null;
+        walls[1] = right != null ? right.transform : null;
     }
+
+    // Parede: o colisor (1 unidade de largura) fica com a borda de dentro em x = ±WallInner = na borda
+    // da tela (−20 a 20). O feltro fica TODO fora da tela: só aparece em telas mais largas que 16:9.
+    private const float WallInner = 20f;
+    private const float WallFeltWidth = 8f;
 
     public void Build(int layoutIndex, Color platformColor)
     {
@@ -50,23 +64,27 @@ public class LevelBuilder
         spawned.Clear();
         surfaces.Clear();
 
-        Color floorColor = Color.Lerp(platformColor, Color.black, 0.45f);
-        if (floor != null) floor.color = floorColor;
+        // Tom do feltro: um pouco mais claro que a cor do chefe (o feltro escurece com a borda e o pontilhado).
+        // Chão, paredes e plataformas usam o MESMO tom.
+        Color feltColor = Color.Lerp(platformColor, Color.white, 0.25f);
+        if (floor != null) floor.color = feltColor;
         if (config.Felt != null && floor != null)
         {
             // Chão = um feltro grande do tamanho do chão (o quadrado original só fica com o colisor)
             floor.enabled = false;
             if (floorFelt == null)
             {
-                floorFelt = Fx.MakeSprite("FloorFelt", config.Felt, Vector3.zero, Color.white, 0);
+                floorFelt = Fx.MakeSprite("FloorFelt", config.Felt, Vector3.zero, Color.white, 1);
                 floorFelt.drawMode = SpriteDrawMode.Tiled;
             }
             // O sprite do chão é um quadrado de 1 unidade escalado: posição e escala dão o retângulo.
             Vector3 c = floor.transform.position, size = floor.transform.lossyScale;
             floorFelt.transform.position = new Vector3(c.x, c.y, 0f);
             floorFelt.size = new Vector2(size.x, size.y);
-            floorFelt.color = floorColor;
+            floorFelt.color = feltColor;
         }
+        BuildWalls(feltColor);
+        BuildBackground(platformColor);
         surfaces.Add(new Surface { minX = -18f, maxX = 18f, top = FloorTop });
 
         var layout = Layouts[Mathf.Clamp(layoutIndex, 0, Layouts.Length - 1)];
@@ -85,8 +103,6 @@ public class LevelBuilder
                     sr.enabled = false; // o quadrado esticado some; fica só o colisor
                     // Feltro como objeto separado (sem a escala do colisor), topo alinhado com o topo da plataforma
                     float top = p.y + PlatformHeight / 2f;
-                    // Tom um pouco mais claro que a cor do chefe: o feltro escurece com a borda e o pontilhado
-                    Color feltColor = Color.Lerp(platformColor, Color.white, 0.25f);
                     var felt = Fx.MakeSprite("Felt", config.Felt, new Vector3(p.x, top - FeltThickness / 2f, 0f), feltColor, 0);
                     felt.drawMode = SpriteDrawMode.Tiled;
                     felt.size = new Vector2(p.z, FeltThickness);
@@ -97,6 +113,56 @@ public class LevelBuilder
             surfaces.Add(new Surface { minX = p.x - p.z / 2f + 1f, maxX = p.x + p.z / 2f - 1f, top = p.y + PlatformHeight / 2f });
         }
         PlaceProps(layoutIndex);
+    }
+
+    // Paredes laterais com o mesmo feltro do chão/plataformas. Vão do chão até acima da tela
+    // (a ponta arredondada de cima fica escondida) e ficam atrás do chão.
+    private void BuildWalls(Color feltColor)
+    {
+        if (config.Felt == null) return;
+        const float bottom = FloorTop - 1f, top = 13f;
+        for (int i = 0; i < 2; i++)
+        {
+            float side = i == 0 ? -1f : 1f;
+            if (walls[i] != null)
+            {
+                walls[i].position = new Vector3(side * (WallInner + 0.5f), walls[i].position.y, 0f);
+                if (walls[i].TryGetComponent(out SpriteRenderer wsr)) wsr.enabled = false;
+            }
+            if (wallFelts[i] == null)
+            {
+                wallFelts[i] = Fx.MakeSprite(i == 0 ? "WallFeltLeft" : "WallFeltRight", config.Felt, Vector3.zero, Color.white, 0);
+                wallFelts[i].drawMode = SpriteDrawMode.Tiled;
+            }
+            wallFelts[i].transform.position = new Vector3(side * (WallInner + WallFeltWidth / 2f), (bottom + top) / 2f, 0f);
+            wallFelts[i].size = new Vector2(WallFeltWidth, top - bottom);
+            wallFelts[i].color = feltColor;
+        }
+    }
+
+    // Fundo: imagem cinza do GameConfig cobrindo a tela, tingida com a cor das plataformas do chefe.
+    // Multiplicar cinza × cor = a imagem "pega" a cor sem perder os detalhes.
+    private void BuildBackground(Color platformColor)
+    {
+        Sprite sprite = config.Background;
+        if (sprite == null)
+        {
+            if (background != null) background.enabled = false;
+            return;
+        }
+        if (background == null)
+        {
+            background = Fx.MakeSprite("Background", sprite, Vector3.zero, Color.white, -100);
+            background.drawMode = SpriteDrawMode.Simple;
+        }
+        background.enabled = true;
+        background.sprite = sprite;
+        // Escala para cobrir exatamente 40 × 22,5 unidades, seja qual for o PPU da imagem.
+        Vector2 size = sprite.bounds.size;
+        background.transform.localScale = new Vector3(40f / size.x, 22.5f / size.y, 1f);
+        Color tint = Color.Lerp(Color.white, platformColor, config.BackgroundTint) * config.BackgroundBrightness;
+        tint.a = 1f;
+        background.color = tint;
     }
 
     // Decoração: 1 prop em cada plataforma e 2 nos cantos do chão. Semente fixa por layout,
@@ -126,17 +192,22 @@ public class LevelBuilder
     }
 
     // Ponto aleatório em cima de alguma superfície, longe do ponto "avoid".
-    public Vector2 RandomSpawnPoint(Vector2 avoid, float minDistance)
+    // others: pontos que também devem ficar longe (outros orbes/pacotes), pelo menos othersDistance.
+    public Vector2 RandomSpawnPoint(Vector2 avoid, float minDistance, IList<Vector2> others = null, float othersDistance = 3f)
     {
         Vector2 best = Vector2.zero;
-        float bestDist = -1f;
-        for (int i = 0; i < 12; i++)
+        float bestScore = float.NegativeInfinity;
+        for (int i = 0; i < 20; i++)
         {
             var s = surfaces[Random.Range(0, surfaces.Count)];
             var p = new Vector2(Random.Range(s.minX, s.maxX), s.top + 0.9f);
             float d = Vector2.Distance(p, avoid);
-            if (d >= minDistance) return p;
-            if (d > bestDist) { bestDist = d; best = p; }
+            float nearest = float.PositiveInfinity;
+            if (others != null) foreach (var o in others) nearest = Mathf.Min(nearest, Vector2.Distance(p, o));
+            if (d >= minDistance && nearest >= othersDistance) return p;
+            // Nenhum ponto perfeito: fica com o "menos pior"
+            float score = Mathf.Min(d - minDistance, nearest - othersDistance);
+            if (score > bestScore) { bestScore = score; best = p; }
         }
         return best;
     }

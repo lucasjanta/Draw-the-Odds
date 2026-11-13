@@ -18,6 +18,7 @@ public class PixelOutline : MonoBehaviour
     private RectTransform sourceRect;
     private TextMeshProUGUI[] copies;
     private float thickness;
+    private string lastSource, plain = "";
 
     public static PixelOutline Add(TextMeshProUGUI text, float thickness, Color color)
     {
@@ -31,6 +32,7 @@ public class PixelOutline : MonoBehaviour
         {
             var c = UIFactory.Text(text.name + "Outline", text.transform.parent, text.text, text.fontSize, color, text.alignment);
             c.transform.SetSiblingIndex(index); // antes do original = desenhado atrás
+            c.NoLoc(); // a cópia só repete o texto (já traduzido) do original
             o.copies[i] = c;
         }
         o.Sync();
@@ -46,8 +48,15 @@ public class PixelOutline : MonoBehaviour
             var c = copies[i];
             if (c == null) continue;
             c.gameObject.SetActive(source.gameObject.activeInHierarchy && source.enabled);
-            if (c.text != source.text) c.text = source.text;
+            // Tira as tags de cor: o contorno é todo escuro mesmo com partes coloridas no texto
+            if (lastSource != source.text)
+            {
+                lastSource = source.text;
+                plain = System.Text.RegularExpressions.Regex.Replace(source.text, "<color=[^>]*>|</color>", "");
+            }
+            if (c.text != plain) c.text = plain;
             c.fontSize = source.fontSize;
+            if (c.font != source.font) c.font = source.font;
             c.fontStyle = source.fontStyle;
             c.characterSpacing = source.characterSpacing;
             c.lineSpacing = source.lineSpacing;

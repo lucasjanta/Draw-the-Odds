@@ -9,11 +9,11 @@ using UnityEngine.UI;
 public class OptionsPanel : MonoBehaviour
 {
     private Slider master, music, effects;
-    private TextMeshProUGUI masterValue, musicValue, effectsValue, trackLabel;
+    private TextMeshProUGUI masterValue, musicValue, effectsValue, trackLabel, languageLabel;
 
     public static OptionsPanel Create(Transform parent, Action onBack)
     {
-        var panel = UIFactory.MenuPanel("Options", parent, new Vector2(300f, 196f));
+        var panel = UIFactory.MenuPanel("Options", parent, new Vector2(300f, 222f));
         var p = panel.gameObject.AddComponent<OptionsPanel>();
 
         var title = UIFactory.Text("Title", panel.transform, "OPTIONS", 20f, UIFactory.Gold, TextAlignmentOptions.Center);
@@ -29,7 +29,15 @@ public class OptionsPanel : MonoBehaviour
         trackName.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(18f, -126f), new Vector2(70f, 16f));
         var trackButton = UIFactory.Button("TrackButton", panel.transform, "", new Vector2(150f, 18f), p.CycleTrack, 10f);
         trackButton.GetComponent<RectTransform>().Place(new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(92f, -126f), new Vector2(150f, 18f));
-        p.trackLabel = trackButton.GetComponentInChildren<TextMeshProUGUI>();
+        // Pega o texto "Label" (não as cópias do contorno, que vêm antes na hierarquia)
+        p.trackLabel = trackButton.transform.Find("Label").GetComponent<TextMeshProUGUI>();
+
+        // Idioma: ◄ ENGLISH ► / ◄ PORTUGUÊS ► (troca na hora, todas as telas)
+        var langName = UIFactory.Text("Language", panel.transform, "LANGUAGE", 11f, Color.white);
+        langName.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(18f, -152f), new Vector2(70f, 16f));
+        var langButton = UIFactory.Button("LanguageButton", panel.transform, "", new Vector2(150f, 18f), p.CycleLanguage, 10f);
+        langButton.GetComponent<RectTransform>().Place(new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(92f, -152f), new Vector2(150f, 18f));
+        p.languageLabel = langButton.transform.Find("Label").GetComponent<TextMeshProUGUI>().NoLoc();
 
         var back = UIFactory.Button("Back", panel.transform, "BACK", new Vector2(120f, 24f), onBack, 12f);
         back.GetComponent<RectTransform>().Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 12f), new Vector2(120f, 24f));
@@ -81,8 +89,15 @@ public class OptionsPanel : MonoBehaviour
         RefreshLabels();
     }
 
+    private void CycleLanguage()
+    {
+        Loc.Toggle();
+        RefreshLabels();
+    }
+
     private void RefreshLabels()
     {
+        languageLabel.text = $"◄ {Loc.LanguageName} ►";
         int track = GameManager.MusicTrackChoice;
         trackLabel.text = track == 0 ? "◄ AUTO ►" : $"◄ GAMEPLAY {track} ►";
         masterValue.text = Mathf.RoundToInt(master.value * 100f) + "%";

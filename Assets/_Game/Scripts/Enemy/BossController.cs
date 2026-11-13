@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 
 // Chefe (placeholder com sprite de carta). A "IA" é uma coroutine (Brain) em loop:
 // passear → antecipação (dado rolando; a face que sai escolhe o ataque) → ataque → repetir.
@@ -29,7 +30,8 @@ public class BossController : MonoBehaviour
     public event Action OnDefeated;
     public event Action OnTelegraph;      // começou a antecipação de um ataque (tutorial usa)
     public event Action OnAttackFinished;
-    public event Action<string> OnDieLanded; // o dado parou: nome do ataque escolhido (ex.: "DICE x3")
+    public event Action<string> OnDieLanded;
+    public static string AttackLog = ""; // o dado parou: nome do ataque escolhido (ex.: "DICE x3")
 
     // Tutorial: o chefe só passeia até isto ser ligado.
     public bool AttacksEnabled { get; set; } = true;
@@ -47,7 +49,28 @@ public class BossController : MonoBehaviour
     private float rerollTimer;
     private bool rerolling;
     private Coroutine brain;
-    private readonly List<GameObject> warnings = new List<GameObject>();
+    // Avisos de perigo na tela (setas pixel art + faixas translúcidas), animados por BlinkWarnings.
+    private class Warning
+    {
+        public SpriteRenderer sr;
+        public Color color;
+        public Vector3 basePos;
+        public Vector2 bob;      // direção para onde a seta "cutuca" (a faixa não se mexe)
+        public bool stripe;
+    }
+    private readonly List<Warning> warnings = new List<Warning>(); // todos (para limpar ao morrer)
+
+    // Dificuldade escolhida (EASY/NORMAL/HARDCORE) e qual chefe este é (0..2; −1 = tutorial).
+    private DifficultySettings diff = new DifficultySettings();
+    private int bossIndex = -1;
+    private bool quickFollow;   // emendar o próximo ataque sem a pausa (Dama e Rei, de vez em quando)
+
+    // ===================== Dificuldade =====================
+    // Raiva: 0 com a vida cheia → Data.Enrage com a vida no fim. Deixa tudo mais rápido
+    // (só Dama e Rei têm Enrage > 0 no GameConfig).
+    public float Rage => Data.Enrage * (1f - (float)CurrentHp / Mathf.Max(1, Data.MaxHp));
+    private float PaceFactor => 1f + Rage;               // pausas, passeio e antecipação mais curtos
+    private float ProjectileFactor => 1f + Rage * 0.5f;  // projéteis um pouco mais rápidos
 
     public static BossController Spawn(GameConfig config, BossData data, Suit suit, PlayerHealth player, float floorY)
     {
@@ -84,6 +107,9 @@ public class BossController : MonoBehaviour
     private void Start()
     {
         visualBase = visual.localPosition;
+        var gm = GameManager.Instance;
+        bossIndex = gm != null ? gm.BossIndex : -1;
+        if (gm != null) diff = gm.CurrentDifficulty;
         brain = StartCoroutine(Brain());
     }
 
@@ -111,26 +137,87 @@ public class BossController : MonoBehaviour
                 yield return Wander(0.5f);
                 continue;
             }
-            yield return Wander(Data.IdleTime * UnityEngine.Random.Range(0.8f, 1.2f));
+            // Pausa entre ataques (dificuldade: EASY pausa mais, HARDCORE menos). Às vezes emenda direto.
+            float idle = Data.IdleTime * diff.IdleMultiplier / PaceFactor * UnityEngine.Random.Range(0.8f, 1.2f);
+            yield return Wander(quickFollow ? 0.35f : idle);
             if (!AttacksEnabled) continue; // o tutorial pode desligar os ataques durante o passeio
 
             // O dado decide o ataque: cada face é um ataque (ou uma variação mais forte/fraca dele).
             int face = UnityEngine.Random.Range(1, 7);
-            BossAttack attack = Data.AttackForFace(face);
-            if (attack.Type == BossAttackType.Jokers && config.RandomJoker() == null)
-                attack = new BossAttack(BossAttackType.Volley, attack.Count, attack.Speed);
-            OnTelegraph?.Invoke();
-            yield return Telegraph(attack, face);
+            BossAttack attack = PickAttack(face);
 
-            switch (attack.Type)
+            // Dama e Rei podem MISTURAR: um 2º dado sorteia outro tipo de ataque e os dois vêm juntos.
+            float combo = Data.ComboChance * diff.ComboMultiplier;
+            BossAttack second = null;
+            int face2 = 0;
+            if (UnityEngine.Random.value < combo)
             {
-                case BossAttackType.Volley: yield return Volley(attack.Count, attack.Speed); break;
-                case BossAttackType.Rain: yield return Rain(attack.Count, attack.Speed); break;
-                case BossAttackType.Dash: yield return Dash(attack.Count, attack.Speed); break;
-                case BossAttackType.Jokers: yield return Jokers(attack.Count, attack.Speed); break;
+                for (int guard = 0; guard < 12 && second == null; guard++)
+                {
+                    face2 = UnityEngine.Random.Range(1, 7);
+                    var candidate = PickAttack(face2);
+                    if (candidate.Type != attack.Type) second = candidate;
+                }
             }
+
+            OnTelegraph?.Invoke();
+            yield return Telegraph(attack, face, second, face2);
+
+            if (second == null) yield return RunAttack(attack);
+            else yield return RunTogether(attack, second);
             OnAttackFinished?.Invoke();
+            quickFollow = UnityEngine.Random.value < Data.ChainChance * diff.ComboMultiplier;
         }
+    }
+
+    // Ataque de uma face, já com os ajustes da dificuldade.
+    private BossAttack PickAttack(int face)
+    {
+        BossAttack attack = Data.AttackForFace(face);
+        if (attack.Type == BossAttackType.Jokers && config.RandomJoker() == null)
+            attack = new BossAttack(BossAttackType.Volley, attack.Count, attack.Speed);
+
+        // HARDCORE: limite de investidas maior (Valete 2, Dama 3, Rei 5). Quem não tem investida
+        // no dado (Valete) ganha uma na face 2.
+        int maxDashes = diff.MaxDashes(bossIndex);
+        if (maxDashes > 0)
+        {
+            if (face == 2 && !Data.HasAttack(BossAttackType.Dash)) attack = new BossAttack(BossAttackType.Dash, maxDashes, 30f);
+            if (attack.Type == BossAttackType.Dash)
+            {
+                int count = Mathf.Max(attack.Count, UnityEngine.Random.Range(Mathf.Max(1, maxDashes - 1), maxDashes + 1));
+                attack = new BossAttack(BossAttackType.Dash, count, attack.Speed);
+            }
+        }
+        return attack;
+    }
+
+    private IEnumerator RunAttack(BossAttack attack)
+    {
+        float speed = attack.Speed * ProjectileFactor * diff.AttackSpeedMultiplier;
+        switch (attack.Type)
+        {
+            case BossAttackType.Volley: yield return Volley(attack.Count, speed); break;
+            case BossAttackType.Rain: yield return Rain(attack.Count, speed); break;
+            case BossAttackType.Dash: yield return Dash(attack.Count, speed); break;
+            case BossAttackType.Jokers: yield return Jokers(attack.Count, speed); break;
+        }
+    }
+
+    // Dois ataques ao mesmo tempo (o 2º começa um pouquinho depois, para dar para ler).
+    private IEnumerator RunTogether(BossAttack a, BossAttack b)
+    {
+        int done = 0;
+        StartCoroutine(Track(RunAttack(a), () => done++));
+        yield return new WaitForSeconds(0.3f);
+        StartCoroutine(Track(RunAttack(b), () => done++));
+        while (done < 2) yield return null;
+    }
+
+    private IEnumerator Track(IEnumerator routine, Action onDone)
+    {
+        yield return routine;
+        onDone();
     }
 
     private IEnumerator MoveTo(Vector2 target, float duration)
@@ -150,7 +237,7 @@ public class BossController : MonoBehaviour
         Vector2 dest = RandomArenaPoint();
         for (float t = 0f; t < duration; t += Time.deltaTime)
         {
-            Vector2 pos = Vector2.MoveTowards(transform.position, dest, Data.MoveSpeed * Time.deltaTime);
+            Vector2 pos = Vector2.MoveTowards(transform.position, dest, Data.MoveSpeed * PaceFactor * Time.deltaTime);
             transform.position = pos;
             if (Vector2.Distance(pos, dest) < 0.1f) dest = RandomArenaPoint();
             visual.localPosition = visualBase + Vector3.up * Mathf.Sin(Time.time * 3f) * 0.25f;
@@ -171,18 +258,28 @@ public class BossController : MonoBehaviour
 
     // Antecipação: um dado rola acima da cabeça e o chefe treme. Quando o dado para, a face mostra
     // qual ataque vem (nome escrito em cima) e o chefe pisca com a cor do ataque.
-    private IEnumerator Telegraph(BossAttack attack, int finalFace)
+    // Com second != null, rolam DOIS dados (ataques misturados) e os dois nomes aparecem.
+    private IEnumerator Telegraph(BossAttack attack, int finalFace, BossAttack second = null, int secondFace = 0)
     {
         Color tint = attack.Tint;
         const float landAt = 0.6f; // 60% do tempo rolando, 40% com a face à mostra
         bool landed = false;
 
         Vector3 diePos = transform.position + Vector3.up * (sr.bounds.extents.y + 1.2f);
+        if (second != null) diePos += Vector3.left * 0.85f;
         var die = Fx.MakeSprite("TelegraphDie", config.DieFace(1), diePos, Color.white, 90, transform);
         float dieScale = 1.3f / Mathf.Max(0.01f, die.sprite != null ? die.sprite.bounds.size.x : 1f);
         die.transform.localScale = Vector3.one * dieScale;
+        SpriteRenderer die2 = null;
+        if (second != null)
+        {
+            die2 = Fx.MakeSprite("TelegraphDie2", config.DieFace(1), diePos + Vector3.right * 1.7f, Color.white, 90, transform);
+            die2.transform.localScale = Vector3.one * dieScale;
+        }
+        string label = second != null ? attack.Label + " + " + second.Label : attack.Label;
 
-        float duration = Data.TelegraphTime;
+        // Ataque misturado: um pouco mais de tempo para ler os dois dados.
+        float duration = Data.TelegraphTime * diff.TelegraphMultiplier * (second != null ? 1.2f : 1f) / (1f + Rage * 0.6f);
         float faceTimer = 0f;
         AudioManager.Sfx(config.SfxDiceShake, 0.8f);
         for (float t = 0f; t < duration; t += Time.deltaTime)
@@ -193,6 +290,11 @@ public class BossController : MonoBehaviour
             {
                 die.sprite = config.DieFace(UnityEngine.Random.Range(1, 7));
                 die.transform.localRotation = Quaternion.Euler(0f, 0f, UnityEngine.Random.Range(-25f, 25f));
+                if (die2 != null)
+                {
+                    die2.sprite = config.DieFace(UnityEngine.Random.Range(1, 7));
+                    die2.transform.localRotation = Quaternion.Euler(0f, 0f, UnityEngine.Random.Range(-25f, 25f));
+                }
                 faceTimer = 0.06f;
             }
             else if (k >= landAt)
@@ -200,13 +302,25 @@ public class BossController : MonoBehaviour
                 die.sprite = config.DieFace(finalFace);
                 die.transform.localRotation = Quaternion.identity;
                 die.transform.localScale = Vector3.one * dieScale * (1f + 0.3f * Mathf.Sin((k - landAt) * 4f * Mathf.PI));
+                if (die2 != null)
+                {
+                    die2.sprite = config.DieFace(secondFace);
+                    die2.transform.localRotation = Quaternion.identity;
+                    die2.transform.localScale = die.transform.localScale;
+                }
                 if (!landed)
                 {
                     landed = true;
                     // Nome do ataque ao lado do dado (em cima ficaria fora da tela quando o chefe voa alto)
-                    Vector3 labelPos = die.transform.position + (die.transform.position.x > 10f ? Vector3.left : Vector3.right) * 3f;
-                    Fx.Popup(attack.Label, labelPos, tint, 7f, duration * (1f - landAt) + 0.4f, 0.6f);
-                    OnDieLanded?.Invoke(attack.Label);
+                    // Perto da borda direita o nome vai para a esquerda dos dados.
+                    // Nome do ataque logo ABAIXO do chefe (em cima ficava atrás dos painéis do HUD).
+                    // Cada letra tem ~0,58 u neste tamanho: segura o texto dentro da tela.
+                    float half = label.Length * 0.29f;
+                    Vector3 labelPos = transform.position + Vector3.down * (sr.bounds.extents.y + 0.9f);
+                    labelPos.x = Mathf.Clamp(labelPos.x, -19.5f + half, 19.5f - half);
+                    Fx.Popup(label, labelPos, tint, 7f, duration * (1f - landAt) + 0.4f, 0.6f);
+                    OnDieLanded?.Invoke(label);
+                    AttackLog += label + " | "; // debug (ponte): GameManager.DebugAttackLog
                 }
             }
 
@@ -220,6 +334,7 @@ public class BossController : MonoBehaviour
         sr.color = Color.white;
         visual.localPosition = visualBase;
         Destroy(die.gameObject);
+        if (die2 != null) Destroy(die2.gameObject);
     }
 
     // Leque de dados mirado no player.
@@ -232,41 +347,48 @@ public class BossController : MonoBehaviour
         {
             float angle = (i - (count - 1) / 2f) * spread;
             Vector2 dir = Quaternion.Euler(0f, 0f, angle) * toPlayer;
-            DiceProjectile.Spawn(config, UnityEngine.Random.Range(1, 7), origin, dir * speed, 0f, floorY);
+            DiceProjectile.Spawn(config, UnityEngine.Random.Range(1, 7), origin, dir * speed * Data.DiceSpeedMultiplier, 0f, floorY)
+                .WithTrail(Data.DiceTrailColor, Data.DangerousDice);
             yield return new WaitForSeconds(0.06f);
         }
         Fx.Shake(0.15f, 0.15f);
         yield return new WaitForSeconds(0.4f);
     }
 
-    // Chuva de fichas: setas piscando na borda de cima marcam as colunas, depois as fichas caem.
+    // Chuva de fichas: cada coluna ganha uma faixa vermelha translúcida + seta pixel art (contorno preto)
+    // piscando no topo; depois as fichas (grandes, 2,5 u) caem com sombra no chão.
+    private static readonly Color RainDanger = new Color32(0xFF, 0x4A, 0x3D, 0xFF);
+
     private IEnumerator Rain(int count, float speed)
     {
-        var xs = new List<float> { Mathf.Clamp(player.transform.position.x, -18f, 18f) };
+        const float spacing = 3.4f; // fichas de 2,5 u: sempre sobra um vão para desviar
+        var xs = new List<float> { Mathf.Clamp(player.transform.position.x, -17.5f, 17.5f) };
         int guard = 0;
-        while (xs.Count < count && guard++ < 50)
+        while (xs.Count < count && guard++ < 60)
         {
-            float x = UnityEngine.Random.Range(-18f, 18f);
+            float x = UnityEngine.Random.Range(-17.5f, 17.5f);
             bool farEnough = true;
-            foreach (float other in xs) if (Mathf.Abs(other - x) < 2.5f) farEnough = false;
+            foreach (float other in xs) if (Mathf.Abs(other - x) < spacing) farEnough = false;
             if (farEnough) xs.Add(x);
         }
 
-        var color = new Color(1f, 0.3f, 0.35f);
+        var group = new List<Warning>();
         foreach (float x in xs)
         {
             // Embaixo dos painéis do HUD (cantos de cima) a seta desce um pouco para aparecer.
-            float y = x < HudLeftX - 2f || x > HudRightX + 2f ? 6.4f : 10.3f;
-            EdgeArrow("\u25BC", new Vector3(x, y, 0f), color);
+            float y = x < HudLeftX - 2f || x > HudRightX + 2f ? 6.2f : 10f;
+            const float top = 11.5f;
+            AddStripe(group, new Vector3(x, (top + floorY) / 2f, 0f), new Vector2(DiceProjectile.ChipRadius * 2.2f, top - floorY), RainDanger);
+            AddArrow(group, new Vector3(x, y, 0f), 0f, RainDanger);
         }
-        yield return BlinkWarnings(0.85f, color);
+        yield return BlinkWarnings(group, 0.85f);
 
         foreach (float x in xs)
         {
             // Chuva de fichas de poker (vermelha, preta, azul, branca); sem fichas no config, cai dado.
             Sprite chip = config.RandomChip();
-            if (chip != null) DiceProjectile.SpawnChip(chip, new Vector2(x, 12.5f), Vector2.down * speed, floorY);
-            else DiceProjectile.Spawn(config, UnityEngine.Random.Range(1, 7), new Vector2(x, 12.5f), Vector2.down * speed, 0f, floorY);
+            if (chip != null) DiceProjectile.SpawnChip(chip, new Vector2(x, 13f), Vector2.down * speed, floorY);
+            else DiceProjectile.Spawn(config, UnityEngine.Random.Range(1, 7), new Vector2(x, 13f), Vector2.down * speed, 0f, floorY);
             yield return new WaitForSeconds(0.08f);
         }
         yield return new WaitForSeconds(0.5f);
@@ -292,8 +414,15 @@ public class BossController : MonoBehaviour
             sr.color = Color.white;
             Fx.Shake(0.3f, 0.2f);
             Fx.Burst(transform.position + Vector3.down * 2f, Color.white, 8, 6f, 0.25f);
-            yield return new WaitForSeconds(0.35f);
-            yield return MoveTo(RandomArenaPoint(), 0.7f);
+            bool last = i == times - 1;
+            yield return new WaitForSeconds(last ? 0.35f : 0.2f);
+            if (last) yield return MoveTo(RandomArenaPoint(), 0.7f);
+            else
+            {
+                // Entre uma investida e outra só sobe um pouco (5 seguidas não demoram uma eternidade)
+                Vector2 up = new Vector2(transform.position.x, Mathf.Clamp(transform.position.y + 4f, ArenaMinY, ArenaMaxY));
+                yield return MoveTo(up, 0.35f);
+            }
         }
     }
 
@@ -310,14 +439,20 @@ public class BossController : MonoBehaviour
         }
 
         var fromLeft = new List<bool>();
+        var group = new List<Warning>();
         foreach (int lane in lanes)
         {
             bool left = UnityEngine.Random.value < 0.5f;
             fromLeft.Add(left);
             float y = LaneY(lane);
-            EdgeArrow(left ? "\u25BA\u25BA" : "\u25C4\u25C4", new Vector3(left ? -18.4f : 18.4f, y, 0f), new Color(0.85f, 0.5f, 1f));
+            // Faixa do andar inteiro + duas setas na borda apontando para onde o coringa vai.
+            AddStripe(group, new Vector3(0f, y, 0f), new Vector2(38.5f, JokerProjectile.Radius * 2.3f), JokerDanger);
+            float angle = left ? 90f : -90f;   // a seta base aponta para baixo: +90° = direita
+            float edge = left ? -17.6f : 17.6f, step = left ? 1.3f : -1.3f;
+            AddArrow(group, new Vector3(edge, y, 0f), angle, JokerDanger);
+            AddArrow(group, new Vector3(edge + step, y, 0f), angle, JokerDanger);
         }
-        yield return BlinkWarnings(0.9f, new Color(0.85f, 0.5f, 1f));
+        yield return BlinkWarnings(group, 0.9f);
 
         for (int i = 0; i < lanes.Count; i++)
         {
@@ -326,6 +461,8 @@ public class BossController : MonoBehaviour
         }
         yield return new WaitForSeconds(0.8f);
     }
+
+    private static readonly Color JokerDanger = new Color32(0xC0, 0x6A, 0xFF, 0xFF);
 
     // Centro do coringa: logo acima do piso do andar (pega o player em pé; pulando dá para passar por cima).
     private static float LaneY(int lane) => LaneTops[lane] + JokerProjectile.Radius + 0.15f;
@@ -342,36 +479,63 @@ public class BossController : MonoBehaviour
     // Debug: força o ataque dos coringas (call GameManager.DebugJokers).
     public void DebugJokers(int count) => StartCoroutine(Jokers(count, 16f));
     public void DebugRain(int count) => StartCoroutine(Rain(count, 16f));
+    public void DebugVolley(int count) => StartCoroutine(Volley(count, 14f));
 
-    // Aviso discreto: seta na borda da tela (some junto com ClearWarnings).
-    private void EdgeArrow(string glyph, Vector3 pos, Color color)
+    // Seta de perigo (pixel art com contorno preto, escala inteira 2×). angle 0 = aponta para baixo.
+    private void AddArrow(List<Warning> group, Vector3 pos, float angle, Color color)
     {
-        var t = Fx.WorldText(glyph, pos, 9f, color, 95);
-        warnings.Add(t.gameObject);
+        var sr = Fx.MakeSprite("DangerArrow", Fx.Arrow, pos, color, 96);
+        sr.transform.rotation = Quaternion.Euler(0f, 0f, angle);
+        sr.transform.localScale = Vector3.one * 2f;
+        Vector2 dir = Quaternion.Euler(0f, 0f, angle) * Vector2.down;
+        var w = new Warning { sr = sr, color = color, basePos = pos, bob = dir };
+        group.Add(w);
+        warnings.Add(w);
     }
 
-    // Faz as setas piscarem (liga/desliga rápido) e depois as remove.
-    private IEnumerator BlinkWarnings(float duration, Color color)
+    // Faixa translúcida marcando a área que vai ser atingida (fica atrás do chão e das plataformas).
+    private void AddStripe(List<Warning> group, Vector3 center, Vector2 size, Color color)
+    {
+        var sr = Fx.MakeSprite("DangerZone", Fx.Pixel, center, new Color(color.r, color.g, color.b, 0f), -50);
+        sr.transform.localScale = new Vector3(size.x, size.y, 1f);
+        var w = new Warning { sr = sr, color = color, basePos = center, stripe = true };
+        group.Add(w);
+        warnings.Add(w);
+    }
+
+    // Anima os avisos: setas piscam e "cutucam" na direção do perigo; faixas acendem aos poucos e pulsam,
+    // piscando mais rápido no fim (o ataque está chegando). Depois remove tudo.
+    // Cada ataque anima só o SEU grupo de avisos (dois ataques misturados não apagam os do outro).
+    private IEnumerator BlinkWarnings(List<Warning> group, float duration)
     {
         for (float t = 0f; t < duration; t += Time.deltaTime)
         {
-            bool on = Mathf.Repeat(t * 7f, 1f) < 0.6f;
-            float pulse = 1f + 0.15f * Mathf.Sin(t * 20f);
-            foreach (var w in warnings)
+            float k = t / duration;
+            float blinkRate = Mathf.Lerp(5f, 12f, k);
+            bool on = Mathf.Repeat(t * blinkRate, 1f) < 0.6f;
+            float bob = Mathf.Round(Mathf.Abs(Mathf.Sin(t * 14f)) * 4f) / 16f; // anda de pixel em pixel (0–4 px)
+            foreach (var w in group)
             {
-                if (w == null) continue;
-                var tmp = w.GetComponent<TMPro.TextMeshPro>();
-                if (tmp != null) tmp.color = new Color(color.r, color.g, color.b, on ? 1f : 0.15f);
-                w.transform.localScale = Vector3.one * pulse;
+                if (w.sr == null) continue;
+                if (w.stripe)
+                {
+                    float a = Mathf.Lerp(0.1f, 0.3f, Mathf.Min(1f, k * 2f)) * (on ? 1f : 0.55f);
+                    w.sr.color = new Color(w.color.r, w.color.g, w.color.b, a);
+                }
+                else
+                {
+                    w.sr.enabled = on;
+                    w.sr.transform.position = w.basePos + (Vector3)(w.bob * bob);
+                }
             }
             yield return null;
         }
-        ClearWarnings();
+        foreach (var w in group) { if (w.sr != null) Destroy(w.sr.gameObject); warnings.Remove(w); }
     }
 
     private void ClearWarnings()
     {
-        foreach (var w in warnings) if (w != null) Destroy(w);
+        foreach (var w in warnings) if (w.sr != null) Destroy(w.sr.gameObject);
         warnings.Clear();
     }
 
@@ -393,12 +557,26 @@ public class BossController : MonoBehaviour
             HintDirection.Lower => "▼ LOWER",
             _ => "EXACT!",
         };
-        Fx.Popup(hintText, top, r.isCritical ? new Color(1f, 0.9f, 0.2f) : warm, r.isCritical ? 11f : 8f, 1.3f);
+        // Pista com impacto (entra grande e "bate"); mais perto do número = maior.
+        float hintSize = r.isCritical ? 14f : r.distance <= 2 ? 10f : 8.5f;
+        Fx.Popup(hintText, top, r.isCritical ? new Color(1f, 0.9f, 0.2f) : warm, hintSize, r.isCritical ? 1.8f : 1.3f, 1.6f,
+            true, r.isCritical ? Color.white : (Color?)null);
         // Copas só cura se a carta estiver perto do número (mesma tabela do dano): longe = "NO HEAL".
-        if (r.isHeal) Fx.Popup(r.amount > 0 ? $"+{r.amount} HP" : "NO HEAL", hitPosition + Vector3.left, SuitInfo.GetColor(Suit.Hearts), r.amount > 0 ? 6f : 5f, 1f);
-        else Fx.Popup(r.amount > 0 ? $"-{r.amount}" : "0", hitPosition + Vector3.right, Color.white, r.amount > 0 ? 7f : 5f, 0.9f);
+        if (r.isHeal) Fx.Popup(r.amount > 0 ? $"+{r.amount} HP" : "NO HEAL", hitPosition + Vector3.left, SuitInfo.GetColor(Suit.Hearts), r.amount > 0 ? 7f : 5f, 1f, 1.6f, r.amount > 0);
+        // Com dano, o número voa até a barra de vida (BossHUD). Sem dano, só um "0" pequeno aqui.
+        else if (r.amount <= 0) Fx.Popup("0", hitPosition + Vector3.right, Color.white, 5f, 0.9f);
+        if (r.amount > 0 && !r.isHeal && !r.isCritical) Fx.HitStop(0.05f); // congeladinha em todo acerto
         Fx.Burst(hitPosition, SuitInfo.GetColor(card.suit), r.isCritical ? 22 : 10, r.isCritical ? 12f : 7f, 0.3f);
-        Fx.Shake(r.isCritical ? 0.5f : 0.12f + 0.06f * r.amount, r.isCritical ? 0.35f : 0.15f);
+        Fx.Shake(r.isCritical ? 0.75f : 0.12f + 0.06f * r.amount, r.isCritical ? 0.45f : 0.15f);
+        if (r.isCritical)
+        {
+            // Número exato: congela um instante, clarão dourado, anel de choque e faíscas brancas.
+            Fx.HitStop(0.12f);
+            ScreenFlash.Play(new Color(1f, 0.92f, 0.55f), 0.35f, 0.3f);
+            var ring = Fx.MakeSprite("CritRing", Fx.Ring, transform.position, new Color(1f, 0.9f, 0.3f), 150);
+            ring.gameObject.AddComponent<ShockRing>().Init(12f, 0.45f, 1f);
+            Fx.Burst(transform.position, Color.white, 16, 14f, 0.25f);
+        }
         if (r.amount > 0 && !r.isHeal) StartCoroutine(HurtFlash());
 
         OnHit?.Invoke(r);
@@ -420,8 +598,24 @@ public class BossController : MonoBehaviour
         return r;
     }
 
+    // Clarão branco: uma luz 2D forte em cima do chefe por um instante (o sprite "estoura" de branco),
+    // depois pisca vermelho.
+    private Light2D flashLight;
+
     private IEnumerator HurtFlash()
     {
+        if (flashLight == null)
+        {
+            flashLight = new GameObject("HitFlash").AddComponent<Light2D>();
+            flashLight.transform.SetParent(transform, false);
+            flashLight.lightType = Light2D.LightType.Point;
+            flashLight.pointLightOuterRadius = 4.5f;
+            flashLight.pointLightInnerRadius = 3f;
+            flashLight.color = Color.white;
+        }
+        flashLight.intensity = 5f;
+        yield return new WaitForSecondsRealtime(0.07f);
+        flashLight.intensity = 0f;
         for (int i = 0; i < 2; i++)
         {
             sr.color = new Color(1f, 0.35f, 0.35f);
@@ -472,7 +666,8 @@ public class BossController : MonoBehaviour
     private void Die()
     {
         IsDead = true;
-        if (brain != null) StopCoroutine(brain);
+        StopAllCoroutines(); // a IA e os ataques que rodam em paralelo (misturados)
+        sr.color = Color.white;
         ClearWarnings();
         OnDefeated?.Invoke();
         StartCoroutine(DeathAnimation());

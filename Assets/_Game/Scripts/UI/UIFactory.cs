@@ -55,6 +55,17 @@ public static class UIFactory
         tmp.overflowMode = TextOverflowModes.Overflow;
         tmp.raycastTarget = false;
         tmp.richText = true;
+        tmp.gameObject.AddComponent<TextFit>(); // nunca deixa a linha passar da largura da caixa
+        tmp.gameObject.AddComponent<LocText>(); // tradução automática (inglês → português)
+        return tmp;
+    }
+
+    // Texto que NÃO deve ser traduzido sozinho (nome digitado, nomes do ranking, textos que já
+    // escolhem o idioma no código com Loc.Pick).
+    public static TextMeshProUGUI NoLoc(this TextMeshProUGUI tmp)
+    {
+        var loc = tmp.GetComponent<LocText>();
+        if (loc != null) Object.Destroy(loc);
         return tmp;
     }
 
@@ -83,14 +94,31 @@ public static class UIFactory
     private static readonly Color ButtonHover = new Color32(0x5A, 0x41, 0x9E, 0xFF);
     private static readonly Color ButtonPressed = new Color32(0x8A, 0x6A, 0x1E, 0xFF);
 
-    // Botão simples: fundo + texto. Toca o clique de UI e chama onClick.
+    public static readonly Color OutlineColor = new Color32(0x0A, 0x06, 0x12, 0xFF);
+
+    // Botão pixel art: contorno preto de 2 px, face colorida com brilho em cima e sombra embaixo,
+    // texto com contorno. Cresce no hover e "afunda" no clique (ButtonJuice). Toca o clique de UI.
     public static Button Button(string name, Transform parent, string label, Vector2 size, System.Action onClick, float fontSize = 14f)
     {
-        var img = Image(name, parent, Color.white);
+        var img = Image(name, parent, OutlineColor);   // a raiz é o contorno
         img.raycastTarget = true; // precisa receber o clique
         img.rectTransform.sizeDelta = size;
 
+        var face = Image("Face", img.transform, Color.white); // a cor vem do Button (normal/hover/clique)
+        face.rectTransform.Stretch(2f);
+        var shine = Image("Shine", face.transform, new Color(1f, 1f, 1f, 0.16f));
+        shine.rectTransform.anchorMin = new Vector2(0f, 1f);
+        shine.rectTransform.anchorMax = new Vector2(1f, 1f);
+        shine.rectTransform.pivot = new Vector2(0.5f, 1f);
+        shine.rectTransform.sizeDelta = new Vector2(0f, 2f);
+        var shade = Image("Shade", face.transform, new Color(0f, 0f, 0f, 0.3f));
+        shade.rectTransform.anchorMin = Vector2.zero;
+        shade.rectTransform.anchorMax = new Vector2(1f, 0f);
+        shade.rectTransform.pivot = new Vector2(0.5f, 0f);
+        shade.rectTransform.sizeDelta = new Vector2(0f, 3f);
+
         var btn = img.gameObject.AddComponent<Button>();
+        btn.targetGraphic = face;
         var colors = btn.colors;
         colors.normalColor = ButtonNormal;
         colors.highlightedColor = ButtonHover;
@@ -107,6 +135,7 @@ public static class UIFactory
         });
 
         img.gameObject.AddComponent<HoverSound>();
+        img.gameObject.AddComponent<ButtonJuice>();
 
         var text = Text("Label", img.transform, label, fontSize, Color.white, TextAlignmentOptions.Center);
         text.fontStyle = FontStyles.Bold;
@@ -147,13 +176,15 @@ public static class UIFactory
         return slider;
     }
 
-    // Painel de menu centralizado (fundo escuro + faixa dourada no topo).
+    // Painel de menu centralizado: contorno preto de 2 px, fundo escuro e faixa dourada no topo.
     public static Image MenuPanel(string name, Transform parent, Vector2 size)
     {
-        var panel = Image(name, parent, PanelColor);
+        var panel = Image(name, parent, OutlineColor);
         panel.raycastTarget = true; // bloqueia cliques no que está atrás
         panel.rectTransform.Place(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, size);
-        var stripe = Image("Stripe", panel.transform, Gold);
+        var face = Image("Face", panel.transform, new Color(PanelColor.r, PanelColor.g, PanelColor.b, 1f));
+        face.rectTransform.Stretch(2f);
+        var stripe = Image("Stripe", face.transform, Gold);
         stripe.rectTransform.anchorMin = new Vector2(0f, 1f);
         stripe.rectTransform.anchorMax = new Vector2(1f, 1f);
         stripe.rectTransform.pivot = new Vector2(0.5f, 1f);

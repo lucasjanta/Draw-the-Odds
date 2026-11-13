@@ -33,7 +33,7 @@ public class JokerProjectile : MonoBehaviour
         j.spin.SetParent(go.transform, false);
         var sr = Fx.MakeSprite("Sprite", sprite, go.transform.position, Color.white, 75, j.spin);
         sr.transform.localScale = Vector3.one * Scale;
-        j.spinSpeed = fromLeft ? -150f : 150f; // gira devagar: dá para ver que é um coringa
+        j.spinSpeed = fromLeft ? -55f : 55f; // gira bem devagar: dá para ver que é um coringa
         return j;
     }
 

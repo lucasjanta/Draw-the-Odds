@@ -13,7 +13,7 @@ public class FusionPanel : MonoBehaviour
     private GameManager gm;
     private CanvasGroup group;
     private RectTransform root;
-    private TextMeshProUGUI title, opText, errorText, help;
+    private TextMeshProUGUI title, opText, errorText, help, preview;
     private Image timerFill, flash;
     private CardView slotA, slotB, result;
     private GameObject frameA, frameB;
@@ -46,7 +46,14 @@ public class FusionPanel : MonoBehaviour
 
         p.opText = UIFactory.Text("Op", rt, "", 34f, Color.white, TextAlignmentOptions.Center);
         p.opText.fontStyle = FontStyles.Bold;
+        p.opText.Outline(2f); // contorno preto no + − ×
         p.opText.rectTransform.Place(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -4f), new Vector2(60f, 40f));
+
+        // EASY: resultado previsto embaixo do símbolo (ex.: "= 12 ♣")
+        p.preview = UIFactory.Text("Preview", rt, "", 14f, Color.white, TextAlignmentOptions.Center);
+        p.preview.fontStyle = FontStyles.Bold;
+        p.preview.Outline(1f);
+        p.preview.rectTransform.Place(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -34f), new Vector2(84f, 18f));
 
         p.result = CardView.Create(rt, gm.Config, false);
         p.result.Rect.Place(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -4f), new Vector2(CardView.Width, CardView.Height));
@@ -58,12 +65,12 @@ public class FusionPanel : MonoBehaviour
 
         p.errorText = UIFactory.Text("Error", rt, "", 11f, new Color32(0xFF, 0x5A, 0x5A, 0xFF), TextAlignmentOptions.Center);
         p.errorText.fontStyle = FontStyles.Bold;
-        p.errorText.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 20f), new Vector2(300f, 14f));
+        p.errorText.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 30f), new Vector2(300f, 14f));
 
-        p.help = UIFactory.Text("Help", rt,
-            "<color=#FFD447>SCROLL</color> pick   <color=#FFD447>Q</color> / <color=#FFD447>E</color> place   <color=#FFD447>LEFT CLICK</color> merge   <color=#FFD447>RIGHT CLICK</color> skip",
-            10f, new Color(1f, 1f, 1f, 0.85f), TextAlignmentOptions.Center);
-        p.help.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 5f), new Vector2(300f, 14f));
+        p.help = UIFactory.Text("Help", rt, HelpText(), 8f, new Color(1f, 1f, 1f, 0.85f), TextAlignmentOptions.Center).NoLoc();
+        Loc.OnChanged += () => { if (p != null) p.help.text = HelpText(); };
+        p.help.lineSpacing = 4f;
+        p.help.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 4f), new Vector2(300f, 24f));
 
         gm.Fusion.OnStarted += p.HandleStarted;
         gm.Fusion.OnChanged += p.Refresh;
@@ -73,6 +80,12 @@ public class FusionPanel : MonoBehaviour
         gm.Fusion.OnEnded += p.HandleEnded;
         return p;
     }
+
+    private static string HelpText() => Loc.Pick(
+        "<color=#FFD447>SCROLL</color> pick  <color=#FFD447>Q</color>/<color=#FFD447>E</color> place\n" +
+        "<color=#FFD447>L-CLICK</color> merge  <color=#FFD447>R-CLICK</color> skip",
+        "<color=#FFD447>RODINHA</color> escolhe  <color=#FFD447>Q</color>/<color=#FFD447>E</color> coloca\n" +
+        "<color=#FFD447>CLIQUE ESQ.</color> funde  <color=#FFD447>CLIQUE DIR.</color> pula");
 
     private static CardView MakeSlot(RectTransform parent, GameManager gm, float x, string key, Color keyColor, out GameObject frameObject)
     {
@@ -111,6 +124,7 @@ public class FusionPanel : MonoBehaviour
         frameB.SetActive(true);
         opText.alpha = 1f;
         help.alpha = 1f;
+        preview.alpha = 1f;
         result.gameObject.SetActive(false);
         flash.color = new Color(1f, 1f, 1f, 0f);
         errorTimer = 0f;
@@ -129,6 +143,19 @@ public class FusionPanel : MonoBehaviour
 
         ShowCard(slotA, f.SlotA >= 0 ? gm.Hand[f.SlotA] : (Card?)null);
         ShowCard(slotB, f.SlotB >= 0 ? gm.Hand[f.SlotB] : (Card?)null);
+
+        preview.text = "";
+        if (f.ShowsPreview && f.BothSlotsFilled)
+        {
+            if (f.TryPreview(out Card r, out string error))
+            {
+                // Número branco + naipe na cor dele clareada (♣ e ♠ são escuros demais no painel)
+                Color suitColor = Color.Lerp(SuitInfo.GetColor(r.suit), Color.white, 0.35f);
+                preview.text = $"= {r.value} <color=#{ColorUtility.ToHtmlStringRGB(suitColor)}>{SuitInfo.Symbol(r.suit)}</color>";
+            }
+            else
+                preview.text = "<color=#FF5A5A>" + (error == "THAT MAKES ZERO!" ? "= 0" : error) + "</color>";
+        }
     }
 
     private static void ShowCard(CardView view, Card? card)
@@ -165,6 +192,7 @@ public class FusionPanel : MonoBehaviour
             slotB.Rect.localRotation = Quaternion.Euler(0f, 0f, -10f * k);
             opText.alpha = 1f - k;
             help.alpha = 1f - k;
+            preview.alpha = 1f - k;
             yield return null;
         }
 
@@ -250,7 +278,9 @@ public class FusionPanel : MonoBehaviour
         if (f.AcceptsInput)
         {
             group.alpha = Mathf.MoveTowards(group.alpha, 1f, Time.unscaledDeltaTime * 8f);
-            UIFactory.SetBar(timerFill.rectTransform, f.Unlimited ? 1f : f.TimeLeft / f.Duration);
+            bool noClock = f.Unlimited || f.NoTimer;
+            UIFactory.SetBar(timerFill.rectTransform, noClock ? 1f : f.TimeLeft / f.Duration);
+            timerFill.transform.parent.gameObject.SetActive(!noClock); // EASY: sem relógio, sem barra
         }
         else if (!f.Resolving)
         {

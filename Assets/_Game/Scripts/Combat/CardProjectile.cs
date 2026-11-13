@@ -14,6 +14,8 @@ public class CardProjectile : MonoBehaviour
     private Rigidbody2D body;
     private Transform spin;
     private bool consumed;
+    private SpriteRenderer sprite;
+    private float trailTimer;
 
     // Fábrica: monta o objeto inteiro em código (sem prefab).
     public static CardProjectile Spawn(GameConfig config, Card card, Vector2 position, Vector2 direction, Transform target)
@@ -29,15 +31,14 @@ public class CardProjectile : MonoBehaviour
 
         var col = go.AddComponent<CircleCollider2D>();
         col.isTrigger = true;
-        col.radius = 0.7f;
+        col.radius = 0.6f;
 
         var spin = new GameObject("Spin").transform;
         spin.SetParent(go.transform, false);
-        var sr = Fx.MakeSprite("Sprite", config.Blank(card.suit), position, Color.white, 60, spin);
-        sr.transform.localScale = Vector3.one * 0.5f;
-        var number = Fx.WorldText(card.Label, position, 7f, SuitInfo.Ink(card.suit), 61, spin);
-        number.outlineColor = Color.white;
-        number.outlineWidth = 0.3f;
+        // Visual: o VERSO da carta (card_back) a 1/4 da escala (58×80 px → ~0,9 × 1,25 unidade).
+        // Girando rápido, a escala não inteira não aparece. O número não vai na carta: ele aparece no acerto.
+        var sr = Fx.MakeSprite("Sprite", config.CardBack != null ? config.CardBack : config.Blank(card.suit), position, Color.white, 60, spin);
+        sr.transform.localScale = Vector3.one * 0.25f;
 
         var p = go.AddComponent<CardProjectile>();
         p.card = card;
@@ -47,6 +48,7 @@ public class CardProjectile : MonoBehaviour
         p.cone = config.CardHomingConeDegrees;
         p.body = body;
         p.spin = spin;
+        p.sprite = sr;
         body.linearVelocity = direction.normalized * p.speed;
         return p;
     }
@@ -55,11 +57,31 @@ public class CardProjectile : MonoBehaviour
     {
         spin.Rotate(0f, 0f, -SpinSpeed * Time.deltaTime);
         age += Time.deltaTime;
+        UpdateTrail();
         if (age >= Lifetime)
         {
             Fx.Burst(transform.position, SuitInfo.GetColor(card.suit), 6, 4f, 0.2f);
             Destroy(gameObject);
         }
+    }
+
+    // "Whoosh": fantasmas da carta que ficam para trás e somem + faíscas na cor do naipe.
+    private void UpdateTrail()
+    {
+        trailTimer -= Time.deltaTime;
+        if (trailTimer > 0f) return;
+        trailTimer = 0.03f;
+        Color suit = Color.Lerp(SuitInfo.GetColor(card.suit), Color.white, 0.3f);
+
+        var ghost = Fx.MakeSprite("CardGhost", sprite.sprite, sprite.transform.position, new Color(1f, 1f, 1f, 0.45f), 59);
+        ghost.transform.rotation = sprite.transform.rotation;
+        ghost.transform.localScale = sprite.transform.lossyScale;
+        ghost.gameObject.AddComponent<TrailEmber>().Init(0.16f, new Color(1f, 1f, 1f, 0.45f), new Color(1f, 1f, 1f, 0f), Vector2.zero);
+
+        Vector3 pos = transform.position + (Vector3)(Random.insideUnitCircle * 0.3f);
+        var spark = Fx.MakeSprite("CardSpark", Fx.Pixel, pos, suit, 58);
+        spark.transform.localScale = Vector3.one * Random.Range(2f, 4f) / 16f;
+        spark.gameObject.AddComponent<TrailEmber>().Init(Random.Range(0.18f, 0.3f), Color.white, suit, Random.insideUnitCircle * 0.8f);
     }
 
     private void FixedUpdate()

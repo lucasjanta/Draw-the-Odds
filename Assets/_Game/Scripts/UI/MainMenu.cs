@@ -1,5 +1,6 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 // Menu principal: Play (com tutorial), Skip Tutorial, How to Play e Options.
 // (WebGL no navegador não tem "Quit": fechar a aba já faz isso.)
@@ -9,13 +10,24 @@ public class MainMenu : MonoBehaviour
     private OptionsPanel options;
     private LeaderboardPanel ranking;
     private RectTransform titleRect;
+    private RawImage pattern;
+    private const int PatternTile = 128;   // textura do padrão: 4×4 células de 32 px
+    private const float PatternScale = 3f; // cada pixel do padrão = 3×3 pixels da tela (naipes maiores)
 
     public static MainMenu Create(Transform parent, GameManager gm)
     {
-        var back = UIFactory.Image("MainMenu", parent, new Color(0.04f, 0.02f, 0.09f, 1f));
+        var back = UIFactory.Image("MainMenu", parent, new Color32(0x1C, 0x11, 0x30, 0xFF));
         back.raycastTarget = true;
         back.rectTransform.Stretch();
         var menu = back.gameObject.AddComponent<MainMenu>();
+
+        // Fundo animado: naipes pretos em diagonal, deslizando devagar (textura repetida + uvRect).
+        menu.pattern = new GameObject("SuitPattern", typeof(RectTransform)).AddComponent<RawImage>();
+        menu.pattern.transform.SetParent(back.transform, false);
+        menu.pattern.rectTransform.Stretch();
+        menu.pattern.texture = SuitPatternTexture();
+        menu.pattern.color = new Color(0f, 0f, 0f, 0.5f);
+        menu.pattern.raycastTarget = false;
 
         // ---------- Tela principal ----------
         var main = UIFactory.Rect("Main", back.transform).Stretch();
@@ -24,6 +36,7 @@ public class MainMenu : MonoBehaviour
         var title = UIFactory.Text("Name", main, "DRAW THE ODDS", 44f, UIFactory.Gold, TextAlignmentOptions.Center);
         // Regular + contorno marrom: no Bold o W virava um bloco só.
         title.fontStyle = FontStyles.Normal;
+        if (gm.Config.TitleFont != null) { title.font = gm.Config.TitleFont; title.fontSize = 52f; title.characterSpacing = 2f; }
         title.characterSpacing = 6f;
         title.Outline(2f, new Color32(0x7A, 0x2E, 0x0E, 0xFF));
         // Pivô no centro para o "pulsar" crescer a partir do meio
@@ -62,12 +75,21 @@ public class MainMenu : MonoBehaviour
     }
 
     // Mostra uma subtela (ou volta para a principal com null).
+    // Debug (ponte do Editor): "howto" | "options" | "ranking" | "main"
+    public static string DebugPage(string page)
+    {
+        var m = FindAnyObjectByType<MainMenu>();
+        if (m == null) return "no menu";
+        m.ShowPage(page == "howto" ? m.howToPlay : page == "options" ? m.options.gameObject : page == "ranking" ? m.ranking.gameObject : null);
+        return "page " + page;
+    }
+
     private void ShowPage(GameObject page)
     {
         mainPanel.SetActive(page == null);
         howToPlay.SetActive(page == howToPlay);
         options.Show(page == options.gameObject);
-        if (page == ranking.gameObject) ranking.Show(null); else ranking.Hide();
+        if (page == ranking.gameObject) ranking.Show(null, GameManager.SelectedDifficulty); else ranking.Hide();
     }
 
     // Título pulsando devagar (escala) com um balanço leve.
@@ -75,6 +97,12 @@ public class MainMenu : MonoBehaviour
     {
         if (titleRect == null) return;
         float t = Time.unscaledTime;
+
+        // Padrão andando na diagonal (para cima e à direita), de texel em texel para não borrar.
+        var size = pattern.rectTransform.rect.size;
+        float offset = Mathf.Floor(t * 10f) / PatternTile;
+        float tile = PatternTile * PatternScale;
+        pattern.uvRect = new Rect(-offset, -offset, size.x / tile, size.y / tile);
         float pulse = 1f + 0.045f * Mathf.Sin(t * 2.6f);
         titleRect.localScale = new Vector3(pulse, pulse, 1f);
         titleRect.localRotation = Quaternion.Euler(0f, 0f, 1.2f * Mathf.Sin(t * 1.3f));
@@ -86,6 +114,63 @@ public class MainMenu : MonoBehaviour
         if (show) { transform.SetAsLastSibling(); ShowPage(null); }
     }
 
+    // Textura do padrão: 4×4 células, cada uma com um naipe pixel art 9×9. O naipe depende de
+    // (coluna + linha), então cada diagonal tem um naipe só: ♠ ♥ ♣ ♦ ♠ ♥ ...
+    private static Texture2D SuitPatternTexture()
+    {
+        string[][] suits =
+        {
+            new[] { "....1....", "...111...", "..11111..", ".1111111.", "111111111", "111111111", ".11.1.11.", "....1....", "...111..." }, // ♠
+            new[] { ".11...11.", "1111.1111", "111111111", "111111111", ".1111111.", "..11111..", "...111...", "....1....", "........." }, // ♥
+            new[] { "...111...", "..11111..", "..11111..", ".1.111.1.", "111111111", "111111111", ".11.1.11.", "....1....", "...111..." }, // ♣
+            new[] { "....1....", "...111...", "..11111..", ".1111111.", "111111111", ".1111111.", "..11111..", "...111...", "....1...." }, // ♦
+        };
+        const int cell = PatternTile / 4;
+        var tex = new Texture2D(PatternTile, PatternTile, TextureFormat.RGBA32, false)
+        {
+            filterMode = FilterMode.Point,
+            wrapMode = TextureWrapMode.Repeat,
+        };
+        var pixels = new Color32[PatternTile * PatternTile];
+        for (int cy = 0; cy < 4; cy++)
+            for (int cx = 0; cx < 4; cx++)
+            {
+                string[] mask = suits[(cx + cy) % 4];
+                int ox = cx * cell + (cell - 9) / 2, oy = cy * cell + (cell - 9) / 2;
+                for (int y = 0; y < 9; y++)
+                    for (int x = 0; x < 9; x++)
+                        if (mask[8 - y][x] == '1') pixels[(oy + y) * PatternTile + ox + x] = new Color32(255, 255, 255, 255);
+            }
+        tex.SetPixels32(pixels);
+        tex.Apply();
+        return tex;
+    }
+
+    // Regras (inglês ou português, com as teclas e naipes coloridos).
+    private static string HowToPlayText()
+    {
+        string Y(string k) => $"<color=#FFD447>{k}</color>";
+        string C(Suit s) => SuitInfo.Colored(SuitInfo.Symbol(s), s);
+        string ops = "<color=#3CC86E>+</color> <color=#E84A5F>−</color> <color=#FFD447>×</color>";
+        if (Loc.IsPt)
+            return
+                $"{Y("A/D")} anda  {Y("ESPAÇO")} pula  {Y("S+ESPAÇO")} desce  {Y("SHIFT")} dash\n" +
+                $"{Y("RODINHA")} escolhe  {Y("CLIQUE")} arremessa  {Y("R")} nova mão  {Y("ESC")} pausa\n\n" +
+                "Descubra o <color=#FFD447>NÚMERO SECRETO</color> de cada chefe.\n" +
+                "<color=#FF8A3D>▲ MAIOR</color> / <color=#5A9BFF>▼ MENOR</color>  mais perto = mais dano\n" +
+                "<color=#FFD447>EXATO = CRÍTICO</color>, depois um número novo\n\n" +
+                $"{C(Suit.Clubs)} normal   {C(Suit.Spades)} x1.5   {C(Suit.Hearts)} cura   {C(Suit.Diamonds)} +1 carta\n\n" +
+                $"Orbes {ops} param o tempo: {Y("Q/E")} coloca, {Y("CLIQUE")} funde";
+        return
+            $"{Y("A/D")} move  {Y("SPACE")} jump  {Y("S+SPACE")} drop  {Y("SHIFT")} dash\n" +
+            $"{Y("SCROLL")} pick card  {Y("CLICK")} throw  {Y("R")} redraw  {Y("ESC")} pause\n\n" +
+            "Find each boss's <color=#FFD447>SECRET NUMBER</color>.\n" +
+            "<color=#FF8A3D>▲ HIGHER</color> / <color=#5A9BFF>▼ LOWER</color>  closer = more damage\n" +
+            "<color=#FFD447>EXACT = CRITICAL</color>, then a new number\n\n" +
+            $"{C(Suit.Clubs)} normal   {C(Suit.Spades)} x1.5   {C(Suit.Hearts)} heal   {C(Suit.Diamonds)} +1 card\n\n" +
+            $"Orbs {ops} stop time: {Y("Q/E")} place, {Y("CLICK")} merge";
+    }
+
     // O texto de regras que antes ficava na tela de título.
     private static GameObject BuildHowToPlay(Transform parent, System.Action onBack)
     {
@@ -95,22 +180,8 @@ public class MainMenu : MonoBehaviour
         title.fontStyle = FontStyles.Bold;
         title.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -8f), new Vector2(600f, 26f));
 
-        string suits =
-            $"{SuitInfo.Colored(SuitInfo.Symbol(Suit.Clubs) + " CLUBS", Suit.Clubs)} normal damage     " +
-            $"{SuitInfo.Colored(SuitInfo.Symbol(Suit.Spades) + " SPADES", Suit.Spades)} x1.5 damage\n" +
-            $"{SuitInfo.Colored(SuitInfo.Symbol(Suit.Hearts) + " HEARTS", Suit.Hearts)} heal you (if close)     " +
-            $"{SuitInfo.Colored(SuitInfo.Symbol(Suit.Diamonds) + " DIAMONDS", Suit.Diamonds)} damage + draw a card";
-
-        string body =
-            "<color=#FFD447>A / D</color> move   <color=#FFD447>SPACE</color> jump   <color=#FFD447>S + SPACE</color> drop down   <color=#FFD447>SHIFT</color> dash\n" +
-            "<color=#FFD447>SCROLL</color> pick a card   <color=#FFD447>LEFT CLICK</color> throw it   <color=#FFD447>R</color> redraw hand (3x per run)   <color=#FFD447>ESC</color> pause\n\n" +
-            "Each hit tells you <color=#FF8A3D>▲ HIGHER</color> or <color=#5A9BFF>▼ LOWER</color> (warm = close).\n" +
-            "EXACT = critical + new number   ±2 = 2 dmg   ±5 = 1 dmg   further = 0\n\n" +
-            suits + "\n\n" +
-            "Grab a <color=#3CC86E>+</color> <color=#E84A5F>−</color> <color=#FFD447>×</color> orb: TIME STOPS!\n" +
-            "<color=#FFD447>Q</color> / <color=#FFD447>E</color> put the selected card in a slot, <color=#FFD447>LEFT CLICK</color> merge, <color=#FFD447>RIGHT CLICK</color> skip.\n" +
-            "The result is a surprise. Mixed suits give one of the two at random.";
-        var text = UIFactory.Text("Body", panel.transform, body, 10f, Color.white, TextAlignmentOptions.Top);
+        var text = UIFactory.Text("Body", panel.transform, HowToPlayText(), 10f, Color.white, TextAlignmentOptions.Top).NoLoc();
+        Loc.OnChanged += () => { if (text != null) text.text = HowToPlayText(); }; // trocou o idioma: remonta
         text.lineSpacing = 4f;
         text.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -44f), new Vector2(600f, 240f));
 

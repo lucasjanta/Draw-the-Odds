@@ -21,13 +21,14 @@ public class GameManager : MonoBehaviour
 
     public static GameManager Instance { get; private set; }
 
-    // Sobrevive ao recarregar a cena: "tentar de novo" volta no mesmo chefe, sem tela de título.
-    private static int retryBossIndex;
+    // Sobrevive ao recarregar a cena: "tentar de novo" começa uma run nova no 1º chefe, sem tela de título
+    // (e sem escolher a dificuldade de novo).
     private static bool skipTitle;
-    private static int retryRedraws = -1;
-    private static RunStats carriedStats;    // stats da run guardadas ao morrer (o retry continua a mesma run)
-    private bool resumedRun;   // redraws que o player tinha ao começar o chefe (volta no retry)
-    private int redrawsAtBossStart;
+
+    // Dificuldade escolhida depois do tutorial (static: continua valendo no "tentar de novo").
+    public static Difficulty SelectedDifficulty { get; set; } = Difficulty.Normal;
+    // Tutorial sempre no NORMAL (a escolha só acontece no fim dele).
+    public DifficultySettings CurrentDifficulty => config.GetDifficulty(IsTutorial ? Difficulty.Normal : SelectedDifficulty);
 
     // Opção de trilha (menu de pausa): 0 = automática (cada chefe com a sua), 1..n = sempre aquela música.
     private const string MusicTrackKey = "musicTrack";
@@ -79,7 +80,7 @@ public class GameManager : MonoBehaviour
         Fusion = new FusionController(Hand, config);
 
         // Física do player vem do GameConfig (velocidade, pulo, gravidade) para ajustar num lugar só.
-        player.ApplyTuning(config.PlayerMoveSpeed, config.PlayerJumpVelocity, config.PlayerGravityScale, config.PlayerMaxFallSpeed);
+        player.ApplyTuning(config.PlayerMoveSpeed, config.PlayerJumpVelocity, config.PlayerGravityScale, config.PlayerMaxFallSpeed, config.PlayerDashCooldown);
 
         PlayerHealth = player.GetComponent<PlayerHealth>();
         if (PlayerHealth == null) PlayerHealth = player.gameObject.AddComponent<PlayerHealth>();
@@ -101,11 +102,14 @@ public class GameManager : MonoBehaviour
         PlayerHealth.OnDamaged += _ => AudioManager.Sfx(config.SfxPlayerHurt);
         Stats.startTime = Time.time;
 
+        // A janela da fusão e o preview do resultado dependem da dificuldade.
+        Fusion.WindowProvider = () => CurrentDifficulty.FusionWindow;
+        Fusion.PreviewProvider = () => CurrentDifficulty.FusionPreview;
+
         if (skipTitle)
         {
-            if (carriedStats != null) { Stats = carriedStats; Stats.startTime = Time.time; resumedRun = true; }
-            carriedStats = null;
-            StartCoroutine(BeginBoss(retryBossIndex));
+            skipTitle = false;
+            StartCoroutine(BeginBoss(0));
         }
         else
         {
@@ -154,7 +158,22 @@ public class GameManager : MonoBehaviour
     public void StartGame(bool withTutorial)
     {
         if (State != GameState.Title) return;
-        StartCoroutine(withTutorial ? BeginTutorial() : BeginBoss(0));
+        if (withTutorial) StartCoroutine(BeginTutorial());
+        else StartCoroutine(ChooseDifficultyThenStart(false));
+    }
+
+    // Tela de dificuldade (depois do tutorial ou no Skip Tutorial) e então o 1º chefe.
+    private IEnumerator ChooseDifficultyThenStart(bool afterTutorial)
+    {
+        State = GameState.Transition;
+        ui.ShowTitle(false);
+        player.ControlsEnabled = false;
+        PlayerHealth.forcedInvulnerable = true;
+        bool chosen = false;
+        ui.Difficulty.Open(SelectedDifficulty, d => { SelectedDifficulty = d; chosen = true; });
+        while (!chosen) yield return null;
+        ui.Difficulty.Close();
+        yield return BeginBoss(0);
     }
 
     // ESC/P: abre ou fecha a pausa. Com as opções abertas, ESC volta para o menu de pausa.
@@ -180,9 +199,6 @@ public class GameManager : MonoBehaviour
 
     public void BackToMainMenu()
     {
-        retryRedraws = -1;
-        carriedStats = null;
-        retryBossIndex = 0;
         skipTitle = false;
         Reload();
     }
@@ -212,12 +228,12 @@ public class GameManager : MonoBehaviour
         player.ControlsEnabled = true;
         PlayerHealth.forcedInvulnerable = true;
         PlayerHealth.cannotDie = index < 0;
-        PlayerHealth.SetMax(config.PlayerMaxHp, true);
+        // A vida só enche no começo da run (tutorial ou 1º chefe): derrotar um chefe NÃO cura.
+        // Morreu = run nova, do 1º chefe (vida e redraws cheios de novo).
+        if (index <= 0) PlayerHealth.SetMax(config.PlayerMaxHp, true);
 
         // Redraws valem para a RUN inteira: só enchem no começo (tutorial ou 1º chefe).
         if (index <= 0) RedrawsLeft = config.RedrawsPerBoss;
-        if (retryRedraws >= 0) { RedrawsLeft = retryRedraws; retryRedraws = -1; } // "tentar de novo" devolve os do início do chefe
-        redrawsAtBossStart = RedrawsLeft;
         OnRedrawsChanged?.Invoke();
 
         if (startingHand != null)
@@ -235,9 +251,8 @@ public class GameManager : MonoBehaviour
     private IEnumerator BeginBoss(int index)
     {
         var data = config.Bosses[index];
-        // Começo de uma run nova (1º chefe, sem ser retry): zera as estatísticas (o tutorial não conta).
-        if (index == 0 && !resumedRun) Stats = new RunStats { startTime = Time.time };
-        resumedRun = false;
+        // Começo de uma run nova (1º chefe): zera as estatísticas (o tutorial não conta).
+        if (index == 0) Stats = new RunStats { startTime = Time.time };
         CurrentBossSuit = SuitInfo.Random(); // cada vez que um chefe surge, o naipe é sorteado
         ui.ShowBanner($"BOSS {index + 1}/{config.Bosses.Count}", BossTitle(data), 2.2f);
         PlayBossMusic(data);
@@ -278,7 +293,11 @@ public class GameManager : MonoBehaviour
         ui.HidePrompt();
         InputLocked = false;
         FusionController.SetTimeScale(1f);
-        StartCoroutine(BeginBoss(0));
+        Fusion.Cancel();
+        Pickups.StopAndClear();
+        ClearProjectiles();
+        if (Boss != null) Destroy(Boss.gameObject);
+        StartCoroutine(ChooseDifficultyThenStart(true));
     }
 
     // Música do chefe, respeitando a opção de trilha do menu de pausa.
@@ -350,7 +369,7 @@ public class GameManager : MonoBehaviour
             InputLocked = false;
             ui.ShowBanner("TUTORIAL COMPLETE", "GOOD LUCK!", 2f);
             yield return new WaitForSeconds(2.4f);
-            StartCoroutine(BeginBoss(0));
+            StartCoroutine(ChooseDifficultyThenStart(true));
             yield break;
         }
 
@@ -359,18 +378,21 @@ public class GameManager : MonoBehaviour
 
         if (BossIndex + 1 < config.Bosses.Count)
         {
-            StartCoroutine(BeginBoss(BossIndex + 1));
+            // Transição: cartas caem e cobrem a tela, a fase troca por baixo, e as cartas caem embora.
+            yield return ui.Curtain.Cover();
+            StartCoroutine(BeginBoss(BossIndex + 1)); // monta a fase nova na hora (antes do 1º yield)
+            yield return null;
+            yield return ui.Curtain.Reveal();
         }
         else
         {
             State = GameState.Victory;
             player.ControlsEnabled = false;
-            retryBossIndex = 0;
             skipTitle = false;
             acceptClickTime = Time.unscaledTime + 1.5f;
             AudioManager.Sfx(config.SfxVictory, 1f, 0f);
             AudioManager.Music(config.MenuMusicIntro, config.MenuMusic, 3f);
-            ui.ShowVictory(Stats, Stats.Elapsed);
+            ui.ShowVictory(Stats, Stats.Elapsed, SelectedDifficulty);
         }
     }
 
@@ -378,12 +400,7 @@ public class GameManager : MonoBehaviour
     {
         State = GameState.GameOver;
         Fusion.Cancel();
-        retryBossIndex = Mathf.Max(0, BossIndex);
-        retryRedraws = IsTutorial ? -1 : redrawsAtBossStart;
-        Stats.deaths++;
-        Stats.elapsedBefore = Stats.Elapsed;
-        carriedStats = IsTutorial ? null : Stats;
-        skipTitle = true;
+        skipTitle = true; // "tentar de novo" = run nova a partir do 1º chefe
         acceptClickTime = Time.unscaledTime + 1.5f;
         StartCoroutine(GameOverSequence());
     }
@@ -451,6 +468,41 @@ public class GameManager : MonoBehaviour
         if (Instance == null) return "no game";
         Instance.Pickups.SpawnPower(Enum.TryParse(type, out PowerType t) ? t : PowerType.Add);
         return "spawned";
+    }
+
+    // "Easy" | "Normal" | "Hardcore"
+    public static string DebugDifficulty(string name)
+    {
+        SelectedDifficulty = Enum.TryParse(name, true, out Difficulty d) ? d : Difficulty.Normal;
+        return "difficulty " + SelectedDifficulty;
+    }
+
+    // Abre a tela de dificuldade como no Skip Tutorial.
+    public static string DebugChoose()
+    {
+        if (Instance == null || Instance.State != GameState.Title) return "not in title";
+        Instance.StartGame(false);
+        return "choosing";
+    }
+
+    public static string DebugPick(string name)
+    {
+        if (Instance == null) return "no game";
+        return Instance.ui.Difficulty.DebugPick(Enum.TryParse(name, true, out Difficulty d) ? d : Difficulty.Normal);
+    }
+
+    // Troca o idioma (testa a tradução): "toggle"
+    public static string DebugLang(string arg)
+    {
+        Loc.Toggle();
+        return "lang " + Loc.Current;
+    }
+
+    public static string DebugPack()
+    {
+        if (Instance == null) return "no game";
+        Instance.Pickups.SpawnCardPack();
+        return "pack";
     }
 
     public static string DebugStart()
@@ -535,6 +587,29 @@ public class GameManager : MonoBehaviour
         return "rain";
     }
 
+    // Câmera lenta para fotografar efeitos (ex.: "0.1"; "1" volta ao normal).
+    public static string DebugSlow(string scale)
+    {
+        FusionController.SetTimeScale(float.Parse(scale, System.Globalization.CultureInfo.InvariantCulture));
+        return "ts " + Time.timeScale;
+    }
+
+    // Troca o fundo na hora (índice da lista "backgrounds" do GameConfig) — usado para comparar fundos.
+    public static string DebugBackground(string index)
+    {
+        if (Instance == null) return "no game";
+        Instance.config.BackgroundIndex = int.Parse(index);
+        Instance.ApplyLevel(Instance.CurrentBossData);
+        return "bg " + index;
+    }
+
+    public static string DebugVolley(string count)
+    {
+        if (Instance == null || Instance.Boss == null) return "no boss";
+        Instance.Boss.DebugVolley(int.Parse(count));
+        return "volley";
+    }
+
     public static string DebugJokers(string count)
     {
         if (Instance == null || Instance.Boss == null) return "no boss";
@@ -550,8 +625,16 @@ public class GameManager : MonoBehaviour
         gm.Stats = new RunStats { cardsThrown = 64, criticals = 7, fusions = 5, damageTaken = 9, deaths = 1, startTime = Time.time, elapsedBefore = 333f };
         gm.State = GameState.Victory;
         gm.ui.ShowTitle(false);
-        gm.ui.ShowVictory(gm.Stats, gm.Stats.Elapsed);
+        gm.ui.ShowVictory(gm.Stats, gm.Stats.Elapsed, SelectedDifficulty);
         return "victory";
+    }
+
+    // Ataques sorteados até agora (testa os ataques misturados). "clear" zera.
+    public static string DebugAttackLog(string arg)
+    {
+        string log = BossController.AttackLog;
+        if (arg == "clear") BossController.AttackLog = "";
+        return log;
     }
 
     public static string DebugState()

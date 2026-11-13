@@ -5,7 +5,8 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
 
-// Ranking global (Supabase, REST). Tabela/função/view: Supabase/draw_the_odds_setup.sql.
+// Ranking global (Supabase, REST). Tabela/função/view: Supabase/draw_the_odds_setup.sql
+// + Supabase/draw_the_odds_modes.sql (um ranking por modo: easy / normal / hardcore).
 // Sem internet (ou antes do SQL ser rodado) tudo funciona com um top 10 LOCAL (PlayerPrefs).
 // A chave abaixo é a "publishable" (pública de propósito): só permite LER; gravar passa pela
 // função dto_submit_run, que confere se a run é plausível no servidor.
@@ -36,6 +37,10 @@ public static class LeaderboardClient
     [Serializable] private class EntryList { public List<Entry> items = new List<Entry>(); }
 
     public static List<Entry> Entries { get; private set; } = new List<Entry>();
+    public static string Mode { get; private set; } = "normal";   // modo da lista carregada
+
+    // Nome do modo como o servidor usa ("easy" | "normal" | "hardcore").
+    public static string ModeId(Difficulty d) => d == Difficulty.Easy ? "easy" : d == Difficulty.Hardcore ? "hardcore" : "normal";
     public static bool Online { get; private set; }
 
     public static string SavedName
@@ -55,14 +60,20 @@ public static class LeaderboardClient
     }
 
     // ===================== Leitura =====================
-    public static IEnumerator FetchTop(Action onDone)
+    public static IEnumerator FetchTop(string mode, Action onDone)
     {
-        string path = $"/rest/v1/dto_top?select=name,score,time_sec,cards_thrown,criticals,fusions,damage_taken,deaths&order=score.desc,created_at.asc&limit={Size}";
+        Mode = mode;
+        string select = $"/rest/v1/dto_top?select=name,score,time_sec,cards_thrown,criticals,fusions,damage_taken,deaths&order=score.desc,created_at.asc&limit={Size}";
+        string path = select + "&mode=eq." + mode;
+        bool fallback = false;
         using (var req = UnityWebRequest.Get(Url + path))
         {
             AddHeaders(req);
             yield return req.SendWebRequest();
-            if (req.result == UnityWebRequest.Result.Success)
+            // Sem a coluna "mode" no servidor (SQL dos modos ainda não rodado): o NORMAL usa a lista antiga.
+            fallback = req.responseCode == 400 && mode == "normal";
+            if (fallback) { }
+            else if (req.result == UnityWebRequest.Result.Success)
             {
                 // O JsonUtility não lê uma lista solta: embrulha num objeto.
                 var list = JsonUtility.FromJson<EntryList>("{\"items\":" + req.downloadHandler.text + "}");
@@ -72,8 +83,19 @@ public static class LeaderboardClient
             else
             {
                 Debug.LogWarning($"Leaderboard: {req.responseCode} {req.error}");
-                Entries = LoadLocal();
+                Entries = LoadLocal(mode);
                 Online = false;
+            }
+        }
+        if (fallback)
+        {
+            using (var req = UnityWebRequest.Get(Url + select))
+            {
+                AddHeaders(req);
+                yield return req.SendWebRequest();
+                Online = req.result == UnityWebRequest.Result.Success;
+                Entries = Online ? JsonUtility.FromJson<EntryList>("{\"items\":" + req.downloadHandler.text + "}").items ?? new List<Entry>()
+                                 : LoadLocal(mode);
             }
         }
         onDone?.Invoke();
@@ -81,13 +103,13 @@ public static class LeaderboardClient
 
     // ===================== Envio =====================
     // onDone(ok, mensagem). Também guarda no top 10 local.
-    public static IEnumerator Submit(string playerName, Entry run, Action<bool, string> onDone)
+    public static IEnumerator Submit(string playerName, Entry run, string mode, Action<bool, string> onDone)
     {
         string nick = CleanName(playerName);
         if (!IsNameOk(nick)) { onDone?.Invoke(false, "INVALID NAME"); yield break; }
         SavedName = nick;
         run.name = nick;
-        AddLocal(run);
+        AddLocal(run, mode);
 
         var body = new StringBuilder();
         body.Append('{');
@@ -99,24 +121,35 @@ public static class LeaderboardClient
         body.Append("\"p_damage\":").Append(run.damage_taken).Append(',');
         body.Append("\"p_deaths\":").Append(run.deaths).Append(',');
         body.Append("\"p_platform\":\"").Append(Platform).Append('"');
-        body.Append('}');
+        string oldBody = body.ToString() + "}";                         // sem o modo (função antiga)
+        body.Append(",\"p_mode\":\"").Append(mode).Append("\"}");
 
-        bool ok;
-        string error;
+        bool ok = false;
+        string error = "", text = "";
+        long code = 0;
+        yield return Post(body.ToString(), (o, c, t) => { ok = o; code = c; text = t; });
+        // Servidor sem o SQL dos modos (função com p_mode não existe): o NORMAL ainda dá para enviar na antiga.
+        if (!ok && code == 404 && mode == "normal") yield return Post(oldBody, (o, c, t) => { ok = o; code = c; text = t; });
+        if (!ok)
+        {
+            error = text.Contains("name") ? "INVALID NAME" : text.Contains("too fast") ? "WAIT A FEW SECONDS" : "OFFLINE - SAVED LOCALLY";
+            Debug.LogWarning($"Leaderboard submit: {code} {text}");
+        }
+        yield return FetchTop(mode, null);
+        onDone?.Invoke(ok, error);
+    }
+
+    private static IEnumerator Post(string json, Action<bool, long, string> onDone)
+    {
         using (var req = new UnityWebRequest(Url + "/rest/v1/rpc/dto_submit_run", "POST"))
         {
-            req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body.ToString()));
+            req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
             req.downloadHandler = new DownloadHandlerBuffer();
             AddHeaders(req);
             req.SetRequestHeader("Content-Type", "application/json");
             yield return req.SendWebRequest();
-            ok = req.result == UnityWebRequest.Result.Success;
-            string text = req.downloadHandler != null ? req.downloadHandler.text : "";
-            error = ok ? "" : text.Contains("name") ? "INVALID NAME" : text.Contains("too fast") ? "WAIT A FEW SECONDS" : "OFFLINE - SAVED LOCALLY";
-            if (!ok) Debug.LogWarning($"Leaderboard submit: {req.responseCode} {text}");
+            onDone(req.result == UnityWebRequest.Result.Success, req.responseCode, req.downloadHandler != null ? req.downloadHandler.text : "");
         }
-        yield return FetchTop(null);
-        onDone?.Invoke(ok, error);
     }
 
     private static void AddHeaders(UnityWebRequest req)
@@ -160,23 +193,26 @@ public static class LeaderboardClient
     }
 
     // ===================== Top 10 local =====================
-    private static List<Entry> LoadLocal()
+    // Top 10 local de cada modo (o NORMAL usa a chave antiga, para não perder o que já estava salvo).
+    private static string LocalKeyFor(string mode) => mode == "normal" ? LocalKey : LocalKey + "_" + mode;
+
+    private static List<Entry> LoadLocal(string mode)
     {
-        var json = PlayerPrefs.GetString(LocalKey, "");
+        var json = PlayerPrefs.GetString(LocalKeyFor(mode), "");
         if (string.IsNullOrEmpty(json)) return new List<Entry>();
         var list = JsonUtility.FromJson<EntryList>(json);
         return list?.items ?? new List<Entry>();
     }
 
-    private static void AddLocal(Entry run)
+    private static void AddLocal(Entry run, string mode)
     {
-        var list = LoadLocal();
+        var list = LoadLocal(mode);
         var same = list.Find(e => string.Equals(e.name, run.name, StringComparison.OrdinalIgnoreCase));
         if (same == null) list.Add(run);
         else if (run.score > same.score) list[list.IndexOf(same)] = run;
         list.Sort((a, b) => b.score.CompareTo(a.score));
         if (list.Count > Size) list.RemoveRange(Size, list.Count - Size);
-        PlayerPrefs.SetString(LocalKey, JsonUtility.ToJson(new EntryList { items = list }));
+        PlayerPrefs.SetString(LocalKeyFor(mode), JsonUtility.ToJson(new EntryList { items = list }));
         PlayerPrefs.Save();
     }
 }

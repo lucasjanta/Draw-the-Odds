@@ -19,6 +19,11 @@ public class FusionController
     public bool AcceptsInput => Active && !Resolving;
     // Tutorial: sem limite de tempo (o relógio não anda).
     public bool Unlimited { get; set; }
+    // Dificuldade (o GameManager preenche): segundos para escolher (0 = sem limite) e se mostra o resultado antes.
+    public Func<float> WindowProvider { get; set; }
+    public Func<bool> PreviewProvider { get; set; }
+    public bool NoTimer { get; private set; }          // EASY: o relógio não anda
+    public bool ShowsPreview => PreviewProvider != null && PreviewProvider();
 
     public event Action OnStarted;
     public event Action OnChanged;
@@ -46,7 +51,10 @@ public class FusionController
         Resolving = false;
         Type = type;
         SlotA = SlotB = -1;
-        Duration = TimeLeft = config.FusionWindow;
+        float window = WindowProvider != null ? WindowProvider() : config.FusionWindow;
+        NoTimer = window <= 0f;
+        Duration = TimeLeft = NoTimer ? 1f : window;
+        previewA = previewB = -1;
         SetTimeScale(0f); // tempo totalmente parado
         OnStarted?.Invoke();
         OnChanged?.Invoke();
@@ -55,7 +63,7 @@ public class FusionController
 
     public void Tick()
     {
-        if (!AcceptsInput || Unlimited) return;
+        if (!AcceptsInput || Unlimited || NoTimer) return;
         TimeLeft -= Time.unscaledDeltaTime; // tempo REAL
         if (TimeLeft <= 0f) End(false);
     }
@@ -91,9 +99,32 @@ public class FusionController
         }
 
         // A mão só muda no fim da animação, para o resultado não aparecer antes da hora.
-        pendingResult = FusionRules.Resolve(Type, a, b);
+        // (EASY: usa o mesmo resultado que o preview mostrou, inclusive o naipe sorteado.)
+        pendingResult = TryPreview(out Card preview, out _) ? preview : FusionRules.Resolve(Type, a, b);
         Resolving = true;
         OnResolved?.Invoke(a, b, pendingResult);
+        return true;
+    }
+
+    // Preview (EASY): o resultado das cartas nos slots. O naipe de naipes diferentes é sorteado UMA vez
+    // por par de cartas e guardado, para o preview e a fusão darem o mesmo resultado.
+    private int previewA = -1, previewB = -1;
+    private Card previewCard;
+
+    public bool TryPreview(out Card result, out string error)
+    {
+        result = default;
+        error = null;
+        if (!BothSlotsFilled) return false;
+        Card a = hand[SlotA], b = hand[SlotB];
+        if (!FusionRules.Validate(Type, a, b, config.AllowMixedSuits, out error)) return false;
+        if (previewA != SlotA || previewB != SlotB || previewCard.value != FusionRules.Compute(Type, a.value, b.value))
+        {
+            previewCard = FusionRules.Resolve(Type, a, b);
+            previewA = SlotA;
+            previewB = SlotB;
+        }
+        result = previewCard;
         return true;
     }
 

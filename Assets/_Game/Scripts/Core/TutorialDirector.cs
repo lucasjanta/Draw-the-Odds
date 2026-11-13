@@ -158,8 +158,9 @@ public class TutorialDirector : MonoBehaviour
     private IEnumerator StepMove()
     {
         Setup(false, false);
-        const string esc = "\n<size=7><color=#8888AA>ESC: pause menu (skip the tutorial there)</color></size>";
-        Say($"Welcome to DRAW THE ODDS!\n{K("A")} / {K("D")} to move.{esc}");
+        string esc = Loc.Pick("\n<size=7><color=#8888AA>ESC: pause / skip tutorial</color></size>",
+                              "\n<size=7><color=#8888AA>ESC: pausa / pular tutorial</color></size>");
+        Say(Loc.Pick($"{K("A")} / {K("D")} move{esc}", $"{K("A")} / {K("D")} anda{esc}"));
         float moved = 0f, lastX = player.transform.position.x;
         while (moved < 5f)
         {
@@ -172,7 +173,7 @@ public class TutorialDirector : MonoBehaviour
     private IEnumerator StepJump()
     {
         Setup(false, false);
-        Say($"{K("SPACE")} to jump.\nHold it to jump higher!");
+        Say(Loc.Pick($"{K("SPACE")} jump (hold = higher)", $"{K("ESPAÇO")} pula (segurar = mais alto)"));
         jumped = false;
         yield return Until(() => jumped);
         yield return new WaitForSecondsRealtime(0.8f);
@@ -181,7 +182,7 @@ public class TutorialDirector : MonoBehaviour
     private IEnumerator StepDrop()
     {
         Setup(false, false);
-        Say($"Jump onto a platform, then press\n{K("S")} + {K("SPACE")} to drop down through it.");
+        Say(Loc.Pick($"On a platform: {K("S")} + {K("SPACE")} drops down", $"Na plataforma: {K("S")} + {K("ESPAÇO")} desce"));
         dropped = false;
         yield return Until(() => dropped);
         yield return new WaitForSecondsRealtime(0.6f);
@@ -190,7 +191,7 @@ public class TutorialDirector : MonoBehaviour
     private IEnumerator StepDash()
     {
         Setup(false, false);
-        Say($"{K("SHIFT")} to DASH.\nYou can't be hit while dashing, but it has a cooldown (top-left bar).");
+        Say(Loc.Pick($"{K("SHIFT")} dash (invincible!)", $"{K("SHIFT")} dash (invencível!)"));
         dashed = false;
         yield return Until(() => dashed);
         yield return new WaitForSecondsRealtime(0.9f);
@@ -208,21 +209,22 @@ public class TutorialDirector : MonoBehaviour
             yield return new WaitForSeconds(1.8f);
         }
         Setup(false, false);
-        yield return Pause($"This is the <color=#73D8FF>JOKER</color>. Every boss hides a <color=#FFD447>SECRET NUMBER</color>.\n" +
-                           $"The Joker's number is between {boss.Data.MinNumber} and {boss.Data.MaxNumber}. Find it with your cards!");
+        yield return Pause(Loc.Pick(
+            $"Every boss hides a <color=#FFD447>SECRET NUMBER</color>.\nJoker: {boss.Data.MinNumber} to {boss.Data.MaxNumber}. Find it!",
+            $"Todo chefe esconde um <color=#FFD447>NÚMERO SECRETO</color>.\nCoringa: de {boss.Data.MinNumber} a {boss.Data.MaxNumber}. Descubra!"));
     }
 
     private IEnumerator StepCardsIntro()
     {
         Setup(false, false);
-        yield return Pause($"Your cards are in the bottom-left corner.\n" +
-                           $"{K("SCROLL")} picks a card (or keys 1-0).\n{K("LEFT CLICK")} throws it toward the mouse.");
+        yield return Pause(Loc.Pick($"{K("SCROLL")} / {K("1-0")} pick a card\n{K("LEFT CLICK")} throw it",
+                                    $"{K("RODINHA")} / {K("1-0")} escolhe a carta\n{K("CLIQUE ESQ.")} arremessa"));
     }
 
     private IEnumerator StepThrow()
     {
         Setup(false, false);
-        Say("Throw a card at the Joker!\n<size=8>Aim well: the card only curves a little toward the boss.</size>");
+        Say(Loc.Pick("Hit the Joker with a card!", "Acerte o Coringa com uma carta!"));
         hit = false;
         yield return Until(() => hit);
         yield return new WaitForSecondsRealtime(0.7f);
@@ -231,28 +233,27 @@ public class TutorialDirector : MonoBehaviour
     private IEnumerator StepHints()
     {
         Setup(false, false);
-        yield return Pause("Every hit gives you a HINT (top-right corner):\n" +
-                           "<color=#FF8A3D>▲</color> the number is HIGHER than your card\n" +
-                           "<color=#5A9BFF>▼</color> the number is LOWER\n" +
-                           "Closer guesses deal more damage. Warm colors = close!");
+        yield return Pause(Loc.Pick("<color=#FF8A3D>▲ HIGHER</color>  <color=#5A9BFF>▼ LOWER</color>\nCloser = more damage.",
+                                    "<color=#FF8A3D>▲ MAIOR</color>  <color=#5A9BFF>▼ MENOR</color>\nMais perto = mais dano."));
     }
 
     // Ênfase pedida: acertar o número faz o chefe sortear OUTRO.
     private IEnumerator StepCritical()
     {
         Setup(false, false);
-        yield return Pause("<size=11><color=#FFD447>HIT THE EXACT NUMBER = CRITICAL!</color></size>\n" +
-                           "Huge damage... but then the boss <color=#FF6A2E>ROLLS A NEW SECRET NUMBER</color>!\n" +
-                           "<color=#FF6A2E>Your old hints are useless after that</color>: start guessing again.");
+        yield return Pause(Loc.Pick(
+            "<size=11><color=#FFD447>EXACT = CRITICAL!</color></size>\nThen the boss rolls a <color=#FF6A2E>NEW NUMBER</color>.",
+            "<size=11><color=#FFD447>EXATO = CRÍTICO!</color></size>\nDepois o chefe sorteia um <color=#FF6A2E>NÚMERO NOVO</color>."));
     }
 
     private IEnumerator StepSuits()
     {
         Setup(false, false);
-        yield return Pause($"Suits matter too:\n" +
-                           $"{SuitInfo.Colored("♣ CLUBS", Suit.Clubs)} normal damage\n{SuitInfo.Colored("♠ SPADES", Suit.Spades)} x1.5 damage\n" +
-                           $"{SuitInfo.Colored("♥ HEARTS", Suit.Hearts)} heal YOU (only if close to the number!)\n" +
-                           $"{SuitInfo.Colored("♦ DIAMONDS", Suit.Diamonds)} damage + draw a card");
+        yield return Pause(Loc.Pick(
+            $"{SuitInfo.Colored("♣", Suit.Clubs)} normal  {SuitInfo.Colored("♠", Suit.Spades)} x1.5 damage\n" +
+            $"{SuitInfo.Colored("♥", Suit.Hearts)} heals you  {SuitInfo.Colored("♦", Suit.Diamonds)} +1 card",
+            $"{SuitInfo.Colored("♣", Suit.Clubs)} normal  {SuitInfo.Colored("♠", Suit.Spades)} dano x1.5\n" +
+            $"{SuitInfo.Colored("♥", Suit.Hearts)} cura você  {SuitInfo.Colored("♦", Suit.Diamonds)} +1 carta"));
     }
 
     // Primeiro ataque: quando o dado para, o tempo PARA e a dica explica o que o dado decide.
@@ -263,9 +264,9 @@ public class TutorialDirector : MonoBehaviour
         ui.HidePrompt();
         yield return Until(() => dieLanded);
         boss.AttacksEnabled = false; // depois deste ataque o chefe só passeia
-        yield return Pause("The <color=#FFD447>DIE</color> above the boss decides <color=#FFD447>WHICH ATTACK</color> comes next\n" +
-                           $"(each face is a different attack, or a stronger version of one).\nThis roll: <color=#FF6A2E>{landedAttack}</color>\n" +
-                           $"Dodge it: jump, drop down or {K("SHIFT")} dash!");
+        yield return Pause(Loc.Pick(
+            $"The <color=#FFD447>DIE</color> picks the attack: <color=#FF6A2E>{landedAttack}</color>\nDodge it!",
+            $"O <color=#FFD447>DADO</color> escolhe o ataque: <color=#FF6A2E>{Loc.T(landedAttack)}</color>\nDesvie!"));
         yield return Until(() => attackDone);
         yield return new WaitForSeconds(0.8f);
     }
@@ -284,12 +285,12 @@ public class TutorialDirector : MonoBehaviour
                 Vector2 orbPos = new Vector2(Mathf.Clamp(player.transform.position.x + side * 4f, -17f, 17f), LevelBuilder.FloorTop + 0.9f);
                 gm.Pickups.SpawnPowerAt(PowerType.Subtract, orbPos, 0f); // 0 = não some sozinho
             }
-            Say("Power orbs appear around the arena.\nGrab the glowing orb!");
+            Say(Loc.Pick("Grab the orb!", "Pegue o orbe!"));
             yield return Until(() => gm.Fusion.Active || gm.Hand.Count < 2);
             if (!gm.Fusion.Active) { gm.GiveCards(new[] { Card.Random(), Card.Random() }); continue; }
 
-            ui.ShowPrompt($"TIME IS STOPPED (no time limit here)!\n{K("SCROLL")} pick a card, {K("Q")} / {K("E")} place it in a slot.\n" +
-                          $"{K("LEFT CLICK")} merge   {K("RIGHT CLICK")} skip the orb\nThe result is only revealed after merging!", false);
+            ui.ShowPrompt(Loc.Pick($"TIME STOPPED!\n{K("Q")} / {K("E")} place 2 cards\n{K("LEFT CLICK")} merge",
+                                   $"TEMPO PARADO!\n{K("Q")} / {K("E")} coloca 2 cartas\n{K("CLIQUE ESQ.")} funde"), false);
             yield return Until(() => !gm.Fusion.Active);
             ui.HidePrompt();
             yield return new WaitForSecondsRealtime(0.4f);
@@ -300,15 +301,15 @@ public class TutorialDirector : MonoBehaviour
     private IEnumerator StepFusionInfo()
     {
         Setup(false, false);
-        yield return Pause("Orbs: <color=#3CC86E>+ ADD</color>   <color=#E84A5F>− SUBTRACT</color>   <color=#FFD447>× MULTIPLY</color> (rare!)\n" +
-                           "Mixing two suits gives one of them at random.\n" +
-                           "In the real fights you only have a few seconds, and orbs fade away if you leave them.");
+        yield return Pause(Loc.Pick(
+            "<color=#3CC86E>+</color>  <color=#E84A5F>−</color>  <color=#FFD447>× (rare)</color>\nIn fights you only get a few seconds!",
+            "<color=#3CC86E>+</color>  <color=#E84A5F>−</color>  <color=#FFD447>× (raro)</color>\nNas lutas você só tem alguns segundos!"));
     }
 
     private IEnumerator StepRedraw()
     {
         Setup(false, false);
-        Say($"Bad hand? {K("R")} throws it away and draws a new one.\nOnly 3 redraws for the WHOLE RUN! Try it now.");
+        Say(Loc.Pick($"{K("R")} new hand (3 per run). Try it!", $"{K("R")} mão nova (3 por partida). Tente!"));
         redrew = false;
         yield return Until(() => redrew);
         yield return new WaitForSecondsRealtime(0.8f);
@@ -317,13 +318,13 @@ public class TutorialDirector : MonoBehaviour
     private IEnumerator StepPacks()
     {
         Setup(false, false);
-        yield return Pause("Card packs drop when your hand runs low.\nRemember: EXACT hit = critical, then a <color=#FF6A2E>NEW NUMBER</color>!");
+        yield return Pause(Loc.Pick("Low on cards? Grab the card packs.", "Poucas cartas? Pegue os pacotes."));
     }
 
     private IEnumerator StepFreeFight()
     {
         Setup(true, true);
-        Say("Now defeat the Joker!");
+        Say(Loc.Pick("Defeat the Joker!", "Derrote o Coringa!"));
         yield return new WaitForSecondsRealtime(3.5f);
         ui.HidePrompt();
     }

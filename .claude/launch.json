@@ -1,11 +1,29 @@
-{
-  "version": "0.0.1",
-  "configurations": [
-    {
-      "name": "webgl-build",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8123", "--directory", "Builds/WebGL"],
-      "port": 8123
-    }
-  ]
+﻿{
+    "version":  "0.0.1",
+    "configurations":  [
+                           {
+                               "name":  "webgl-build",
+                               "runtimeExecutable":  "python",
+                               "runtimeArgs":  [
+                                                   "-m",
+                                                   "http.server",
+                                                   "8123",
+                                                   "--directory",
+                                                   "Builds/WebGL"
+                                               ],
+                               "port":  8123
+                           },
+                           {
+                               "name":  "zip-test",
+                               "runtimeExecutable":  "python",
+                               "runtimeArgs":  [
+                                                   "-m",
+                                                   "http.server",
+                                                   "8124",
+                                                   "--directory",
+                                                   "C:\\Users\\lucas\\AppData\\Local\\Temp\\claude\\4686c68f66b9e109\\4b20693a-ff5e-41b8-9aa8-a373ed3929ba\\scratchpad\\zipteste"
+                                               ],
+                               "port":  8124
+                           }
+                       ]
 }

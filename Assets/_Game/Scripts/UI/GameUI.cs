@@ -14,6 +14,8 @@ public class GameUI : MonoBehaviour
     private MainMenu mainMenu;
     private LeaderboardPanel victoryBoard;
     public PauseMenu Pause { get; private set; }
+    public DifficultyPanel Difficulty { get; private set; }
+    public CardCurtain Curtain { get; private set; }
     private TextMeshProUGUI bannerTitle, bannerSub, endTitle, endBody;
     private Coroutine bannerRoutine;
     private CanvasGroup promptGroup;
@@ -50,6 +52,7 @@ public class GameUI : MonoBehaviour
         ui.slowTint = UIFactory.Image("SlowTint", root, new Color(0.02f, 0.02f, 0.08f, 0f));
         ui.slowTint.rectTransform.Stretch();
 
+        LowHpVignette.Create(root, gm);
         HandView.Create(root, gm);
         PlayerHUD.Create(root, gm);
         BossHUD.Create(root, gm);
@@ -64,14 +67,18 @@ public class GameUI : MonoBehaviour
         ui.bannerSub = UIFactory.Text("Sub", banner, "", 12f, new Color(1f, 1f, 1f, 0.7f), TextAlignmentOptions.Center);
         ui.bannerSub.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -8f), new Vector2(600f, 16f));
         ui.bannerTitle = UIFactory.Text("Title", banner, "", 34f, Color.white, TextAlignmentOptions.Center);
-        ui.bannerTitle.fontStyle = FontStyles.Bold;
+        // Títulos dos banners (nomes dos chefes) na fonte do título, se existir
+        if (gm.Config.TitleFont != null) ui.bannerTitle.font = gm.Config.TitleFont;
+        else ui.bannerTitle.fontStyle = FontStyles.Bold;
         ui.bannerTitle.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 8f), new Vector2(600f, 44f));
 
         ui.BuildPrompt(root);
         ui.endGroup = BuildEndPanel(root, out ui.endTitle, out ui.endBody);
         ui.victoryBoard = LeaderboardPanel.Create(root, "MAIN MENU", gm.BackToMainMenu);
         ui.mainMenu = MainMenu.Create(root, gm);
+        ui.Difficulty = DifficultyPanel.Create(root);
         ui.Pause = PauseMenu.Create(root, gm);
+        ui.Curtain = CardCurtain.Create(root, gm.Config);
         EnsureEventSystem();
         return ui;
     }
@@ -188,14 +195,17 @@ public class GameUI : MonoBehaviour
     public void ShowGameOver(string bossName)
     {
         endTitle.text = "<color=#E84A5F>YOU FOLDED</color>";
-        endBody.text = $"The {bossName} called your bluff.\n\n<color=#FFD447>CLICK TO RETRY THE {bossName}</color>";
+        endBody.text = $"The {bossName} called your bluff.\n\n<color=#FFD447>CLICK TO START OVER FROM THE JACK</color>";
         StartCoroutine(Fade(endGroup, 1f, 0.5f));
     }
 
-    public void ShowVictory(GameManager.RunStats stats, float seconds)
+    public void ShowVictory(GameManager.RunStats stats, float seconds, global::Difficulty difficulty)
     {
         // Título no topo e, embaixo, o ranking com a run do jogador (nome se entrar no top 10).
-        endTitle.text = "<color=#FFD447>YOU BEAT THE ODDS!</color>";
+        // Cada modo tem o seu ranking.
+        string mode = difficulty == global::Difficulty.Hardcore ? "\n<size=10><color=#E84A5F>HARDCORE CLEAR!</color></size>"
+            : difficulty == global::Difficulty.Easy ? "\n<size=10><color=#3CC86E>EASY MODE</color></size>" : "";
+        endTitle.text = "<color=#FFD447>YOU BEAT THE ODDS!</color>" + mode;
         endTitle.fontSize = 24f;
         endTitle.rectTransform.anchoredPosition = new Vector2(0f, 156f);
         endBody.text = "";
@@ -212,7 +222,7 @@ public class GameUI : MonoBehaviour
             deaths = stats.deaths,
             score = LeaderboardClient.Score(time, stats.cardsThrown, stats.criticals),
         };
-        victoryBoard.Show(run);
+        victoryBoard.Show(run, difficulty);
         ((RectTransform)victoryBoard.transform).anchoredPosition = new Vector2(0f, -22f);
     }
 

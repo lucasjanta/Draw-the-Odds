@@ -52,7 +52,7 @@ public class PauseMenu : MonoBehaviour
         gameObject.SetActive(true);
         transform.SetAsLastSibling(); // por cima de tudo
         skipTutorial.interactable = gm.IsTutorial;
-        skipTutorial.GetComponentInChildren<TextMeshProUGUI>().alpha = gm.IsTutorial ? 1f : 0.35f;
+        skipTutorial.transform.Find("Label").GetComponent<TextMeshProUGUI>().alpha = gm.IsTutorial ? 1f : 0.35f;
         ShowOptions(false);
     }
 

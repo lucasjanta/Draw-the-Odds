@@ -1,0 +1,8 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:ue="UnityEditor.UIElements">
+  <ui:VisualElement class="window-root">
+    <ui:VisualElement class="sidebar" name="sidebar" />
+    <ui:VisualElement class="content-area">
+      <ui:IMGUIContainer name="content-container" />
+    </ui:VisualElement>
+  </ui:VisualElement>
+</ui:UXML>

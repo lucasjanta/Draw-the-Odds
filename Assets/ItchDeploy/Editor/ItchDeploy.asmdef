@@ -1,0 +1,17 @@
+{
+  "name": "ItchDeploy.Editor",
+  "rootNamespace": "ItchDeploy.Editor",
+  "references": [
+    "ItchDeploy.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": []
+}

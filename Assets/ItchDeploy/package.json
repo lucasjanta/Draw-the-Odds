@@ -1,0 +1,15 @@
+{
+  "name": "com.itchdeploy.core",
+  "version": "1.0.0",
+  "displayName": "ItchDeploy",
+  "description": "Build your Unity game and put it on itch.io without leaving the editor.",
+  "unity": "6000.0",
+  "documentationUrl": "https://github.com/AndriiSviatenko/ItchDeploy/tree/main/docs",
+  "licensesUrl": "https://github.com/AndriiSviatenko/ItchDeploy/blob/main/LICENSE",
+  "keywords": ["itch.io", "butler", "deploy", "ci/cd", "github actions", "build automation"],
+  "author": {
+    "name": "Andrii Sviatenko",
+    "url": "https://github.com/AndriiSviatenko"
+  },
+  "hideInEditor": false
+}
