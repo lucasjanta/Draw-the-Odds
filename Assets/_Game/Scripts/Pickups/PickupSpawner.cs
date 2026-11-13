@@ -46,10 +46,14 @@ public class PickupSpawner : MonoBehaviour
         powers.RemoveAll(p => p == null);
         var cfg = gm.Config;
 
-        // Pacote de cartas: só quando a mão está baixa e não tem outro no mapa.
+        // Pacote de cartas: aparece sempre que a mão tem até 7 cartas (LowHandThreshold) e não tem
+        // outro no mapa. Mão vazia = rápido; mão quase cheia = espera um pouco mais.
         if (CardsEnabled && gm.Hand.Count <= cfg.LowHandThreshold && cardPickups.Count == 0)
         {
-            if (cardTimer < 0f) cardTimer = gm.Hand.Count == 0 ? 0.6f : Random.Range(1.2f, 2.8f);
+            if (cardTimer < 0f)
+                cardTimer = gm.Hand.Count == 0 ? 0.6f
+                          : gm.Hand.Count <= 3 ? Random.Range(1.2f, 2.8f)
+                          : Random.Range(2.5f, 4.5f);
             cardTimer -= Time.deltaTime;
             if (cardTimer <= 0f)
             {

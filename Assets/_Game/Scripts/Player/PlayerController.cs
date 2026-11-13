@@ -57,6 +57,7 @@ public class PlayerController : MonoBehaviour
     public event Action OnJumped;
     public event Action OnDroppedThrough;
     public event Action OnDashed;
+    public event Action OnLanded; // tocou o chão depois de um tempo no ar
 
     // ---------- Internos ----------
     private Collider2D bodyCollider;
@@ -172,7 +173,10 @@ public class PlayerController : MonoBehaviour
         // e se não estiver no meio de um "descer da plataforma".
         bool canLand = Body.linearVelocity.y <= 0.1f && Time.time >= dropUntilTime;
 
+        bool wasGrounded = IsGrounded;
         IsGrounded = hit != null && canLand;
+        // Pouso: estava no ar há pelo menos 0,12 s (evita som ao subir degrauzinho ou tremer na borda)
+        if (IsGrounded && !wasGrounded && Time.time - lastGroundedTime > 0.12f) OnLanded?.Invoke();
         groundUnderFeet = IsGrounded ? hit : null; // operador ternário: cond ? seVerdade : seFalso
 
         if (IsGrounded)

@@ -18,17 +18,18 @@ public struct HitResult
 // Matemática da "sorte": distância entre carta e número secreto → dano.
 public static class LuckyMath
 {
-    public const int CriticalDamage = 3;
-    public const int ColdDistance = 6;
+    public const int CriticalDamage = 5;
+    public const int ColdDistance = 5; // a partir daqui não dá dano
 
     public static int Distance(int cardValue, int secret) => Mathf.Abs(cardValue - secret);
 
-    // 0 = crítico · 1–2 = 2 · 3–5 = 1 · 6+ = 0
+    // 0 = crítico (5) · 1 = 3 · 2 = 2 · 3–4 = 1 · 5+ = 0
     public static int BaseDamage(int distance)
     {
         if (distance == 0) return CriticalDamage;
-        if (distance <= 2) return 2;
-        if (distance <= 5) return 1;
+        if (distance == 1) return 3;
+        if (distance == 2) return 2;
+        if (distance <= 4) return 1;
         return 0;
     }
 

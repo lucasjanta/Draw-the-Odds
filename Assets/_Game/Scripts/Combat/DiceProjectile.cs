@@ -12,6 +12,7 @@ public class DiceProjectile : MonoBehaviour
     private SpriteRenderer sr;
     private bool coinFlip;
     private float age;
+    private AudioSource fallSound;   // som da ficha caindo (para quando ela quebra)
     private SpriteRenderer shadow;   // sombra no chão embaixo da ficha (mostra onde ela vai cair)
     private Color chipColor = Color.white;
 
@@ -98,6 +99,8 @@ public class DiceProjectile : MonoBehaviour
         // Rastro na cor da ficha (risco vertical atrás dela)
         d.meteor = true;
         d.trailColor = Color.Lerp(d.chipColor, Color.white, 0.25f);
+        var gm = GameManager.Instance;
+        if (gm != null) d.fallSound = AudioManager.SfxStoppable(gm.Config.SfxChipFall, 0.6f, 0.08f);
 
         // Sombra: elipse escura achatada em cima do chão (fora da hierarquia da ficha para não girar junto)
         d.shadow = Fx.MakeSprite("ChipShadow", Fx.Circle, new Vector3(position.x, floorY + 0.1f, 0f), new Color(0f, 0f, 0f, 0f), 3);
@@ -188,6 +191,9 @@ public class DiceProjectile : MonoBehaviour
     private void ShatterChip(bool onGround)
     {
         Vector3 pos = transform.position;
+        // Som da ficha quebrando. Na chuva várias quebram quase juntas: o throttle evita estourar o som.
+        var gm = GameManager.Instance;
+        if (gm != null) AudioManager.SfxThrottled(gm.Config.SfxChipBreak, 0.06f, onGround ? 0.8f : 0.6f, 0.1f);
         Sprite chip = sr != null ? sr.sprite : null;
         if (chip != null)
         {
@@ -217,6 +223,7 @@ public class DiceProjectile : MonoBehaviour
 
     private void OnDestroy()
     {
+        AudioManager.StopSfx(fallSound); // quebrou (ou sumiu): corta o som da queda
         if (shadow != null) Destroy(shadow.gameObject);
     }
 

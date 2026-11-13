@@ -53,7 +53,7 @@ MonoBehaviour:
   cardSpeed: 22
   cardHomingDegreesPerSecond: 55
   cardHomingConeDegrees: 30
-  lowHandThreshold: 3
+  lowHandThreshold: 7
   minPackSize: 2
   maxPackSize: 4
   specificSuitChance: 0.35
@@ -292,19 +292,136 @@ MonoBehaviour:
   menuMusicIntro: {fileID: 8300000, guid: 7fc3a6399beac7942a960c008b0705b9, type: 3}
   menuMusic: {fileID: 8300000, guid: 76bbf1ffa8701314fa28738651d49207, type: 3}
   gameMusic: {fileID: 8300000, guid: 01122cb83305b6a4889df7f127081693, type: 3}
-  sfxThrow: {fileID: 8300000, guid: df869b4366115f64fabad4d508a4ab6b, type: 3}
+  sfxThrow: {fileID: 8300000, guid: e8fa1e1a8d9a51447bb8ad3914a331ff, type: 3}
   sfxHit: {fileID: 8300000, guid: 94625b51e4488c2449fbd480933cb142, type: 3}
-  sfxMiss: {fileID: 8300000, guid: 94625b51e4488c2449fbd480933cb142, type: 3}
+  sfxMiss: {fileID: 8300000, guid: 775ddcd61e773b8428d9550ba8f5a1aa, type: 3}
   sfxCritical: {fileID: 8300000, guid: 32849b2722dd3134d97c1e713ea16606, type: 3}
-  sfxHeal: {fileID: 8300000, guid: 664f3033f80ba5e4ab6fbe5d3134aa16, type: 3}
-  sfxPlayerHurt: {fileID: 8300000, guid: 3d8a7f3a20859894aa5d09faac03e65a, type: 3}
+  sfxHeal: {fileID: 8300000, guid: 2ae2c46c62740be49a98272b046980db, type: 3}
+  sfxPlayerHurt: {fileID: 8300000, guid: 234bc1b00cad94e4fa7cd86c1dca6ea7, type: 3}
   sfxBossDefeated: {fileID: 8300000, guid: f19c1eb3bb35705499efc50b89e3089f, type: 3}
-  sfxPowerUp: {fileID: 8300000, guid: 4a7e9de73cc88af4487eeef17e771ae8, type: 3}
+  sfxPowerUp: {fileID: 8300000, guid: a8234dcfc68b614469171f8f16445c16, type: 3}
   sfxFusion: {fileID: 8300000, guid: dcbfe8c7bf409414ca5b103515719c07, type: 3}
-  sfxUiClick: {fileID: 8300000, guid: 4a7e9de73cc88af4487eeef17e771ae8, type: 3}
+  sfxUiClick: {fileID: 8300000, guid: 966b960388deb5947b9c228d1e334349, type: 3}
   sfxUiHover: {fileID: 8300000, guid: 5a9d87b25e8e96e4a85a65ef6b0d4d79, type: 3}
-  sfxCardSelect: {fileID: 8300000, guid: 5a9d87b25e8e96e4a85a65ef6b0d4d79, type: 3}
+  sfxCardSelect: {fileID: 8300000, guid: 0b1677a719843824d8275540a3b30c54, type: 3}
   sfxCardDraw: {fileID: 8300000, guid: 0217c22609f226f4fab8659f2b70759a, type: 3}
   sfxNewHand: {fileID: 8300000, guid: 1c879b01fa826fc4ca2f823418725c91, type: 3}
-  sfxDiceShake: {fileID: 8300000, guid: a447c625b9b658e48886ee925745cf49, type: 3}
+  sfxDiceShake: {fileID: 8300000, guid: f1e2be72b103c6d4f813bd069db1f76f, type: 3}
   sfxVictory: {fileID: 8300000, guid: f19c1eb3bb35705499efc50b89e3089f, type: 3}
+  sfxJump: {fileID: 8300000, guid: c6935baf2d04e3348b0b113e4451d0d8, type: 3}
+  sfxDash: {fileID: 8300000, guid: 8c29c97c17298e04ca16d193d01c1722, type: 3}
+  sfxPlayerDeath: {fileID: 8300000, guid: 0c6d5f79618a80d41a4d0211559b7cb7, type: 3}
+  sfxDiceLand: {fileID: 8300000, guid: 296442382de53a04b93e6ac61b402176, type: 3}
+  sfxNewNumber: {fileID: 8300000, guid: 337dade77f77c7f4e99fd9268008b5bb, type: 3}
+  sfxChipBreak: {fileID: 8300000, guid: 42000a4bf79b078488575a1c33eaedc9, type: 3}
+  sfxJoker: {fileID: 8300000, guid: 69c7a8288f1851e4f8ce5e2cb075b27f, type: 3}
+  sfxCloseness:
+  - {fileID: 8300000, guid: e495a148c1b8cce4996b388f17ec7bb8, type: 3}
+  - {fileID: 8300000, guid: 7c1853292af24ee448cae4cf8ec57208, type: 3}
+  - {fileID: 8300000, guid: db3a725b15f76aa4c99eb045ba6e3663, type: 3}
+  sfxCurtainCard: {fileID: 8300000, guid: 0217c22609f226f4fab8659f2b70759a, type: 3}
+  sfxLand: {fileID: 8300000, guid: 43ca1be97eae10246b4b596ad3b5ba83, type: 3}
+  sfxMixSelect: {fileID: 8300000, guid: cc0894344ceb8d049b53dcdc9b8c8f99, type: 3}
+  sfxMixResult: {fileID: 8300000, guid: 72e467e142b0cd04a976fac8809cf8dc, type: 3}
+  sfxBossDashImpact: {fileID: 8300000, guid: d5cfc54326b83bd4d9e21abde8477ab7, type: 3}
+  sfxChipFall: {fileID: 8300000, guid: f8d52dfd8f7dacd43b67c48769e0f8ab, type: 3}
+  sfxBossEntry: {fileID: 8300000, guid: dcf7f9cddfe44a84bbd7342c39d57edb, type: 3}
+  bossEntryPitch:
+  - 0.95
+  - 1.05
+  - 1.15
+  sfxGains:
+  - clip: {fileID: 8300000, guid: cc0894344ceb8d049b53dcdc9b8c8f99, type: 3}
+    gain: 0.90629
+    measuredDb: -23.145344
+  - clip: {fileID: 8300000, guid: f1e2be72b103c6d4f813bd069db1f76f, type: 3}
+    gain: 0.8387933
+    measuredDb: -22.473099
+  - clip: {fileID: 8300000, guid: 234bc1b00cad94e4fa7cd86c1dca6ea7, type: 3}
+    gain: 0.8206523
+    measuredDb: -22.283184
+  - clip: {fileID: 8300000, guid: dcf7f9cddfe44a84bbd7342c39d57edb, type: 3}
+    gain: 1
+    measuredDb: -22.217352
+  - clip: {fileID: 8300000, guid: 72e467e142b0cd04a976fac8809cf8dc, type: 3}
+    gain: 0.75309664
+    measuredDb: -21.537014
+  - clip: {fileID: 8300000, guid: e8fa1e1a8d9a51447bb8ad3914a331ff, type: 3}
+    gain: 0.5957502
+    measuredDb: -19.501284
+  - clip: {fileID: 8300000, guid: 5a9d87b25e8e96e4a85a65ef6b0d4d79, type: 3}
+    gain: 0.36133692
+    measuredDb: -19.158247
+  - clip: {fileID: 8300000, guid: 43ca1be97eae10246b4b596ad3b5ba83, type: 3}
+    gain: 0.40278366
+    measuredDb: -19.101437
+  - clip: {fileID: 8300000, guid: f8d52dfd8f7dacd43b67c48769e0f8ab, type: 3}
+    gain: 0.4773311
+    measuredDb: -17.576395
+  - clip: {fileID: 8300000, guid: 42000a4bf79b078488575a1c33eaedc9, type: 3}
+    gain: 0.4316357
+    measuredDb: -16.702347
+  - clip: {fileID: 8300000, guid: 0b1677a719843824d8275540a3b30c54, type: 3}
+    gain: 0.41103005
+    measuredDb: -16.277472
+  - clip: {fileID: 8300000, guid: 1c879b01fa826fc4ca2f823418725c91, type: 3}
+    gain: 0.38084233
+    measuredDb: -15.614904
+  - clip: {fileID: 8300000, guid: 69c7a8288f1851e4f8ce5e2cb075b27f, type: 3}
+    gain: 0.3512152
+    measuredDb: -14.911467
+  - clip: {fileID: 8300000, guid: 0217c22609f226f4fab8659f2b70759a, type: 3}
+    gain: 0.34788582
+    measuredDb: -14.828734
+  - clip: {fileID: 8300000, guid: 0c6d5f79618a80d41a4d0211559b7cb7, type: 3}
+    gain: 0.41432947
+    measuredDb: -14.346916
+  - clip: {fileID: 8300000, guid: 94625b51e4488c2449fbd480933cb142, type: 3}
+    gain: 0.32474738
+    measuredDb: -14.230913
+  - clip: {fileID: 8300000, guid: 296442382de53a04b93e6ac61b402176, type: 3}
+    gain: 0.32288107
+    measuredDb: -14.180852
+  - clip: {fileID: 8300000, guid: 775ddcd61e773b8428d9550ba8f5a1aa, type: 3}
+    gain: 0.283666
+    measuredDb: -13.056146
+  - clip: {fileID: 8300000, guid: dcbfe8c7bf409414ca5b103515719c07, type: 3}
+    gain: 0.26903698
+    measuredDb: -12.596239
+  - clip: {fileID: 8300000, guid: 966b960388deb5947b9c228d1e334349, type: 3}
+    gain: 0.25521174
+    measuredDb: -12.138013
+  - clip: {fileID: 8300000, guid: 337dade77f77c7f4e99fd9268008b5bb, type: 3}
+    gain: 0.22780076
+    measuredDb: -11.151103
+  - clip: {fileID: 8300000, guid: 32849b2722dd3134d97c1e713ea16606, type: 3}
+    gain: 0.31494537
+    measuredDb: -10.9647045
+  - clip: {fileID: 8300000, guid: a8234dcfc68b614469171f8f16445c16, type: 3}
+    gain: 0.19685139
+    measuredDb: -9.88277
+  - clip: {fileID: 8300000, guid: f19c1eb3bb35705499efc50b89e3089f, type: 3}
+    gain: 0.26661563
+    measuredDb: -9.517713
+  - clip: {fileID: 8300000, guid: 8c29c97c17298e04ca16d193d01c1722, type: 3}
+    gain: 0.18433961
+    measuredDb: -9.312374
+  - clip: {fileID: 8300000, guid: 2ae2c46c62740be49a98272b046980db, type: 3}
+    gain: 0.17943145
+    measuredDb: -9.077971
+  - clip: {fileID: 8300000, guid: 7c1853292af24ee448cae4cf8ec57208, type: 3}
+    gain: 0.1789702
+    measuredDb: -9.055614
+  - clip: {fileID: 8300000, guid: e495a148c1b8cce4996b388f17ec7bb8, type: 3}
+    gain: 0.16630721
+    measuredDb: -8.418221
+  - clip: {fileID: 8300000, guid: db3a725b15f76aa4c99eb045ba6e3663, type: 3}
+    gain: 0.16553636
+    measuredDb: -8.377869
+  - clip: {fileID: 8300000, guid: c6935baf2d04e3348b0b113e4451d0d8, type: 3}
+    gain: 0.075542234
+    measuredDb: -1.5637959
+  - clip: {fileID: 8300000, guid: d5cfc54326b83bd4d9e21abde8477ab7, type: 3}
+    gain: 0.11407771
+    measuredDb: -0.1440163
+  sfxMakeupDb: 9

@@ -40,7 +40,7 @@ public class GameConfig : ScriptableObject
     [SerializeField] private float cardHomingConeDegrees = 30f; // só corrige se a carta já vai mais ou menos na direção do chefe
 
     [Header("Pickups de carta")]
-    [SerializeField] private int lowHandThreshold = 3;     // abaixo/igual disto surgem pacotes de carta
+    [SerializeField] private int lowHandThreshold = 7;     // abaixo/igual disto surgem pacotes de carta
     [SerializeField] private int minPackSize = 2;
     [SerializeField] private int maxPackSize = 4;
     [SerializeField, Range(0f, 1f)] private float specificSuitChance = 0.35f;
@@ -122,6 +122,51 @@ public class GameConfig : ScriptableObject
     [SerializeField] private AudioClip sfxNewHand;      // mão nova (início do chefe, redraw)
     [SerializeField] private AudioClip sfxDiceShake;    // antecipação do chefe / troca de número
     [SerializeField] private AudioClip sfxVictory;
+    [Header("Áudio — sons novos (13/11)")]
+    [SerializeField] private AudioClip sfxJump;          // pulo (e descer da plataforma, mais grave)
+    [SerializeField] private AudioClip sfxDash;          // dash (whoosh)
+    [SerializeField] private AudioClip sfxPlayerDeath;   // player morreu
+    [SerializeField] private AudioClip sfxDiceLand;      // dado do chefe parou no ataque escolhido
+    [SerializeField] private AudioClip sfxNewNumber;     // chefe troca o número ("NEW NUMBER!")
+    [SerializeField] private AudioClip sfxChipBreak;     // ficha quebrando
+    [SerializeField] private AudioClip sfxJoker;         // coringa atravessando a tela
+    // "Match" pela proximidade: [0] = lower (3–4), [1] = mid (2), [2] = max (1). Ver GameManager.HandleBossHit.
+    [UnityEngine.Serialization.FormerlySerializedAs("sfxFireDice")]
+    [SerializeField] private AudioClip[] sfxCloseness;
+    [SerializeField] private AudioClip sfxCurtainCard;   // cartas da transição pousando
+    [SerializeField] private AudioClip sfxLand;          // player pousou no chão/plataforma
+    [SerializeField] private AudioClip sfxMixSelect;     // pôr carta no slot Q/E da fusão
+    [SerializeField] private AudioClip sfxMixResult;     // cartas se juntando na fusão
+    [SerializeField] private AudioClip sfxBossDashImpact; // fim da investida do chefe (batida forte)
+    [SerializeField] private AudioClip sfxChipFall;      // ficha caindo (para quando ela quebra)
+    [SerializeField] private AudioClip sfxBossEntry;     // chefe entrando na arena
+    [SerializeField] private float[] bossEntryPitch = { 0.95f, 1.05f, 1.15f }; // por chefe: cada vez mais tenso
+
+    public AudioClip SfxBossDashImpact => sfxBossDashImpact;
+    public AudioClip SfxChipFall => sfxChipFall;
+    public AudioClip SfxBossEntry => sfxBossEntry;
+    public float BossEntryPitch(int index) =>
+        bossEntryPitch != null && index >= 0 && index < bossEntryPitch.Length ? bossEntryPitch[index] : 0.9f;
+
+    [Header("Áudio — equalização (menu Draw the Odds/Balance Audio Levels)")]
+    [SerializeField] private List<ClipGain> sfxGains = new List<ClipGain>();
+    [SerializeField] private float sfxMakeupDb;          // reforço no grupo SFX/UI do mixer (os altos são abaixados pelo gain)
+
+    public List<ClipGain> SfxGains => sfxGains;
+    public float SfxMakeupDb => sfxMakeupDb;
+    public AudioClip SfxLand => sfxLand;
+    public AudioClip SfxMixSelect => sfxMixSelect;
+    public AudioClip SfxMixResult => sfxMixResult;
+
+    public AudioClip SfxJump => sfxJump;
+    public AudioClip SfxDash => sfxDash;
+    public AudioClip SfxPlayerDeath => sfxPlayerDeath;
+    public AudioClip SfxDiceLand => sfxDiceLand;
+    public AudioClip SfxNewNumber => sfxNewNumber;
+    public AudioClip SfxChipBreak => sfxChipBreak;
+    public AudioClip SfxJoker => sfxJoker;
+    public AudioClip[] SfxCloseness => sfxCloseness;
+    public AudioClip SfxCurtainCard => sfxCurtainCard;
 
     public AudioClip MenuMusicIntro => menuMusicIntro;
     public AudioClip MenuMusic => menuMusic;

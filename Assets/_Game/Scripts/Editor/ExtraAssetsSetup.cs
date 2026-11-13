@@ -30,8 +30,7 @@ public static class ExtraAssetsSetup
         ConfigureSprite(Art + "Tiles/felt_9slice.png", SpriteAlignment.Center, new Vector4(8, 8, 8, 8), true);
 
         // ---------- Áudio ----------
-        foreach (var path in Directory.GetFiles(Sfx, "*.ogg")) ConfigureAudio(path, false);
-        foreach (var path in Directory.GetFiles(Music, "*.ogg")) ConfigureAudio(path, true);
+        ConfigureAllAudio();
 
         // ---------- Fonte ----------
         SetupFonts(log);
@@ -45,25 +44,75 @@ public static class ExtraAssetsSetup
         so.FindProperty("felt").objectReferenceValue = Sprite(Art + "Tiles/felt_9slice.png");
         so.FindProperty("startingHandSize").intValue = 7;
 
+        AssignAudio(so);
+        so.ApplyModifiedPropertiesWithoutUndo();
+        EditorUtility.SetDirty(config);
+        AssetDatabase.SaveAssets();
+        Debug.Log("[Import Extra Assets] " + log + "done");
+    }
+
+    // Menu "Draw the Odds/Import Audio": só o áudio (configura os arquivos e liga os clipes no
+    // GameConfig), sem mexer em fontes/sprites. Use quando trocar ou adicionar sons.
+    [MenuItem("Draw the Odds/Import Audio")]
+    public static void ImportAudio()
+    {
+        ConfigureAllAudio();
+        var config = AssetDatabase.LoadAssetAtPath<GameConfig>(ConfigPath);
+        var so = new SerializedObject(config);
+        AssignAudio(so);
+        so.ApplyModifiedPropertiesWithoutUndo();
+        EditorUtility.SetDirty(config);
+        AssetDatabase.SaveAssets();
+        Debug.Log("[Import Audio] done");
+    }
+
+    private static void ConfigureAllAudio()
+    {
+        foreach (var path in Directory.GetFiles(Sfx, "*.ogg")) ConfigureAudio(path, false);
+        foreach (var path in Directory.GetFiles(Sfx, "*.wav")) ConfigureAudio(path, false); // sons novos (13/11)
+        foreach (var path in Directory.GetFiles(Sfx, "*.flac")) ConfigureAudio(path, false);
+        foreach (var path in Directory.GetFiles(Music, "*.ogg")) ConfigureAudio(path, true);
+    }
+
+    // Qual arquivo vai em cada campo de som do GameConfig.
+    private static void AssignAudio(SerializedObject so)
+    {
         so.FindProperty("menuMusicIntro").objectReferenceValue = Clip(Music + "menu_and_tutorial_intro.ogg");
         so.FindProperty("menuMusic").objectReferenceValue = Clip(Music + "menu_and_tutorial_loop.ogg");
         so.FindProperty("gameMusic").objectReferenceValue = Clip(Music + "gameplay_1_loop.ogg");
-        so.FindProperty("sfxThrow").objectReferenceValue = Clip(Sfx + "card_throw.ogg");
+        so.FindProperty("sfxThrow").objectReferenceValue = Clip(Sfx + "player_card_throw.wav");
         so.FindProperty("sfxHit").objectReferenceValue = Clip(Sfx + "enemy_hit.ogg");
-        so.FindProperty("sfxMiss").objectReferenceValue = Clip(Sfx + "enemy_hit.ogg");
+        so.FindProperty("sfxMiss").objectReferenceValue = Clip(Sfx + "no_damage.wav");
         so.FindProperty("sfxCritical").objectReferenceValue = Clip(Sfx + "right_number.ogg");
-        so.FindProperty("sfxHeal").objectReferenceValue = Clip(Sfx + "heal.ogg");
-        so.FindProperty("sfxPlayerHurt").objectReferenceValue = Clip(Sfx + "card_damage.ogg");
+        so.FindProperty("sfxHeal").objectReferenceValue = Clip(Sfx + "heal_up.wav");
+        so.FindProperty("sfxPlayerHurt").objectReferenceValue = Clip(Sfx + "player_hurt.wav");
         so.FindProperty("sfxBossDefeated").objectReferenceValue = Clip(Sfx + "win_game.ogg");
         so.FindProperty("sfxVictory").objectReferenceValue = Clip(Sfx + "win_game.ogg");
-        so.FindProperty("sfxPowerUp").objectReferenceValue = Clip(Sfx + "card_select.ogg");
+        so.FindProperty("sfxPowerUp").objectReferenceValue = Clip(Sfx + "orb_collect.wav");
         so.FindProperty("sfxFusion").objectReferenceValue = Clip(Sfx + "card_result.ogg");
-        so.FindProperty("sfxUiClick").objectReferenceValue = Clip(Sfx + "card_select.ogg");
+        so.FindProperty("sfxUiClick").objectReferenceValue = Clip(Sfx + "menu_select.wav");
         so.FindProperty("sfxUiHover").objectReferenceValue = Clip(Sfx + "card_hover.ogg");
-        so.FindProperty("sfxCardSelect").objectReferenceValue = Clip(Sfx + "card_hover.ogg");
+        so.FindProperty("sfxCardSelect").objectReferenceValue = Clip(Sfx + "switch-card.wav");
         so.FindProperty("sfxCardDraw").objectReferenceValue = Clip(Sfx + "card_draw.ogg");
         so.FindProperty("sfxNewHand").objectReferenceValue = Clip(Sfx + "new_hand.ogg");
-        so.FindProperty("sfxDiceShake").objectReferenceValue = Clip(Sfx + "dice_shake.ogg");
+        so.FindProperty("sfxDiceShake").objectReferenceValue = Clip(Sfx + "dice_shake.wav");
+
+        // Sons novos (13/11, pasta "new choosen sfx")
+        so.FindProperty("sfxJump").objectReferenceValue = Clip(Sfx + "Jump.wav");
+        so.FindProperty("sfxDash").objectReferenceValue = Clip(Sfx + "dash_woosh.wav");
+        so.FindProperty("sfxPlayerDeath").objectReferenceValue = Clip(Sfx + "player_defeated.wav");
+        so.FindProperty("sfxDiceLand").objectReferenceValue = Clip(Sfx + "dice_roll.wav");
+        so.FindProperty("sfxNewNumber").objectReferenceValue = Clip(Sfx + "enemy_change_number.wav");
+        so.FindProperty("sfxChipBreak").objectReferenceValue = Clip(Sfx + "chips_breaking.wav");
+        so.FindProperty("sfxJoker").objectReferenceValue = Clip(Sfx + "laugh_joker.flac");
+        so.FindProperty("sfxCurtainCard").objectReferenceValue = Clip(Sfx + "card_draw.ogg");
+        SetArray(so.FindProperty("sfxCloseness"), Clip(Sfx + "match_lower.wav"), Clip(Sfx + "match_mid.wav"), Clip(Sfx + "match_max.wav"));
+        so.FindProperty("sfxLand").objectReferenceValue = Clip(Sfx + "player_land.wav");
+        so.FindProperty("sfxMixSelect").objectReferenceValue = Clip(Sfx + "card_select_for_mix.wav");
+        so.FindProperty("sfxMixResult").objectReferenceValue = Clip(Sfx + "card_result_mix.wav");
+        so.FindProperty("sfxBossDashImpact").objectReferenceValue = Clip(Sfx + "boss_investida_impacto.wav");
+        so.FindProperty("sfxChipFall").objectReferenceValue = Clip(Sfx + "chip_fall.wav");
+        so.FindProperty("sfxBossEntry").objectReferenceValue = Clip(Sfx + "boss_entry.wav");
 
         // Música de cada chefe: Valete e Dama = gameplay 1, Rei (final) = gameplay 2
         var bosses = so.FindProperty("bosses");
@@ -74,10 +123,6 @@ public static class ExtraAssetsSetup
             b.FindPropertyRelative("musicIntro").objectReferenceValue = Clip($"{Music}{tracks[i]}_intro.ogg");
             b.FindPropertyRelative("musicLoop").objectReferenceValue = Clip($"{Music}{tracks[i]}_loop.ogg");
         }
-        so.ApplyModifiedPropertiesWithoutUndo();
-        EditorUtility.SetDirty(config);
-        AssetDatabase.SaveAssets();
-        Debug.Log("[Import Extra Assets] " + log + "done");
     }
 
     // ===================== Fonte Silkscreen (TMP) =====================

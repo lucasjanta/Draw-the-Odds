@@ -83,6 +83,7 @@ public class FusionController
             if (SlotA == index) SlotA = -1;
             SlotB = index;
         }
+        AudioManager.Sfx(config.SfxMixSelect, 0.8f);
         OnChanged?.Invoke();
     }
 

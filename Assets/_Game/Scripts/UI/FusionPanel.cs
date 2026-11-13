@@ -213,6 +213,7 @@ public class FusionPanel : MonoBehaviour
         result.gameObject.SetActive(true);
         result.SetCard(fused);
         Fx.Shake(0.25f, 0.2f);
+        AudioManager.Sfx(gm.Config.SfxFusion); // som da carta recebida: na hora em que ela aparece
 
         bool mixed = a.suit != b.suit;
         float spinUntil = mixed ? 0.9f : 0f;

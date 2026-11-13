@@ -97,6 +97,7 @@ public class CardPickup : MonoBehaviour
             return;
         }
         int added = gm.GiveCards(cards);
+        AudioManager.Sfx(gm.Config.SfxPowerUp, 0.8f); // mesmo som de pegar orbe (o draw card toca no GiveCards)
         Fx.Popup($"+{added} CARDS", transform.position + Vector3.up * 1.5f, new Color(0.7f, 0.85f, 1f), 6f, 1f);
         Fx.Burst(transform.position, Blue, 12, 7f, 0.25f);
         var collect = Fx.MakeSprite("CollectRing", Fx.Ring, transform.position, Color.white, 150);

@@ -98,9 +98,12 @@ public class MainMenu : MonoBehaviour
         if (titleRect == null) return;
         float t = Time.unscaledTime;
 
-        // Padrão andando na diagonal (para cima e à direita), de texel em texel para não borrar.
+        // Padrão andando na diagonal (para cima e à direita). Movimento CONTÍNUO: antes ele pulava
+        // de texel em texel (10 pulos de 3 px por segundo = parecia travado). A textura usa filtro
+        // Point, então mesmo com deslocamento "quebrado" o pixel art continua nítido; o movimento só
+        // fica limitado pelos pixels da tela, que são bem menores.
         var size = pattern.rectTransform.rect.size;
-        float offset = Mathf.Floor(t * 10f) / PatternTile;
+        float offset = Mathf.Repeat(t * 10f, PatternTile) / PatternTile; // Repeat: evita números enormes com o tempo
         float tile = PatternTile * PatternScale;
         pattern.uvRect = new Rect(-offset, -offset, size.x / tile, size.y / tile);
         float pulse = 1f + 0.045f * Mathf.Sin(t * 2.6f);

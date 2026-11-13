@@ -127,6 +127,8 @@ public class BossController : MonoBehaviour
     // ===================== IA =====================
     private IEnumerator Brain()
     {
+        // Entrada: tom sobe a cada chefe (Valete → Dama → Rei); tutorial (índice −1) mais grave.
+        AudioManager.Sfx(config.SfxBossEntry, 0.9f, 0f, config.BossEntryPitch(bossIndex));
         yield return MoveTo(new Vector2(0f, 6f), 1.4f);
         intro = false;
 
@@ -320,6 +322,9 @@ public class BossController : MonoBehaviour
                     labelPos.x = Mathf.Clamp(labelPos.x, -19.5f + half, 19.5f - half);
                     Fx.Popup(label, labelPos, tint, 7f, duration * (1f - landAt) + 0.4f, 0.6f);
                     OnDieLanded?.Invoke(label);
+                    // "Clack" do dado parando; com 2 dados (ataque misturado) toca de novo, mais agudo, como alerta.
+                    AudioManager.Sfx(config.SfxDiceLand, 0.9f);
+                    if (second != null) AudioManager.Sfx(config.SfxDiceLand, 0.7f, 0.03f, 1.25f);
                     AttackLog += label + " | "; // debug (ponte): GameManager.DebugAttackLog
                 }
             }
@@ -343,6 +348,9 @@ public class BossController : MonoBehaviour
         const float spread = 13f;
         Vector2 origin = transform.position;
         Vector2 toPlayer = ((Vector2)player.transform.position + Vector2.up - origin).normalized;
+        // Disparo: som de dado rolando, mais agudo e baixo (no Rei, com fogo, um pouco mais grave e forte).
+        if (Data.DangerousDice) AudioManager.Sfx(config.SfxDiceLand, 0.7f, 0.06f, 1.05f);
+        else AudioManager.Sfx(config.SfxDiceLand, 0.5f, 0.06f, 1.3f);
         for (int i = 0; i < count; i++)
         {
             float angle = (i - (count - 1) / 2f) * spread;
@@ -406,14 +414,17 @@ public class BossController : MonoBehaviour
 
             yield return MoveTo(back, 0.25f);
             sr.color = new Color(1f, 0.5f, 0.5f);
+            AudioManager.Sfx(config.SfxDash, 0.9f, 0.05f, 0.7f); // arrancada (whoosh grave)
             while (Vector2.Distance(transform.position, target) > 0.2f)
             {
                 transform.position = Vector2.MoveTowards(transform.position, target, speed * Time.deltaTime);
                 yield return null;
             }
             sr.color = Color.white;
-            Fx.Shake(0.3f, 0.2f);
-            Fx.Burst(transform.position + Vector3.down * 2f, Color.white, 8, 6f, 0.25f);
+            // Fim da investida: batida forte + tremida de câmera maior (antes era 0,3)
+            AudioManager.Sfx(config.SfxBossDashImpact, 1f, 0.05f);
+            Fx.Shake(0.55f, 0.28f);
+            Fx.Burst(transform.position + Vector3.down * 2f, Color.white, 12, 7f, 0.3f);
             bool last = i == times - 1;
             yield return new WaitForSeconds(last ? 0.35f : 0.2f);
             if (last) yield return MoveTo(RandomArenaPoint(), 0.7f);
@@ -457,6 +468,7 @@ public class BossController : MonoBehaviour
         for (int i = 0; i < lanes.Count; i++)
         {
             JokerProjectile.Spawn(config.RandomJoker(), LaneY(lanes[i]), fromLeft[i], speed);
+            AudioManager.SfxThrottled(config.SfxJoker, 0.5f, 0.75f); // risada do coringa (não empilha com vários)
             yield return new WaitForSeconds(0.3f);
         }
         yield return new WaitForSeconds(0.8f);
@@ -577,7 +589,7 @@ public class BossController : MonoBehaviour
             ring.gameObject.AddComponent<ShockRing>().Init(12f, 0.45f, 1f);
             Fx.Burst(transform.position, Color.white, 16, 14f, 0.25f);
         }
-        if (r.amount > 0 && !r.isHeal) StartCoroutine(HurtFlash());
+        if (r.amount > 0 && !r.isHeal && !r.defeated) StartCoroutine(HurtFlash()); // golpe final: sem brilho (o chefe só morre)
 
         OnHit?.Invoke(r);
         OnHealthChanged?.Invoke(CurrentHp, Data.MaxHp);
@@ -588,7 +600,7 @@ public class BossController : MonoBehaviour
         }
         else if (r.isCritical)
         {
-            StartCoroutine(Reroll(null));
+            StartCoroutine(Reroll(null, 0.3f)); // crítico: gira logo depois do som do crítico
         }
         else if (Data.RerollAtHalfHp && !halfRerollDone && CurrentHp <= Data.MaxHp / 2)
         {
@@ -626,7 +638,10 @@ public class BossController : MonoBehaviour
     }
 
     // Sorteia um novo número secreto (com um dado girando acima da cabeça).
-    private IEnumerator Reroll(string message)
+    public void ForceReroll() => StartCoroutine(Reroll("SHUFFLE!")); // só debug
+
+    // dieTime = quanto tempo o dado gira antes da carta virar (crítico é mais rápido).
+    private IEnumerator Reroll(string message, float dieTime = 0.7f)
     {
         if (rerolling) yield break;
         rerolling = true;
@@ -635,15 +650,17 @@ public class BossController : MonoBehaviour
 
         Vector3 pos = transform.position + Vector3.down * (sr.bounds.extents.y + 0.8f);
         var die = Fx.MakeSprite("RerollDie", config.DieFace(1), pos, Color.white, 90, transform);
-        AudioManager.Sfx(config.SfxDiceShake, 0.8f);
+        // No crítico não toca nada aqui (o som do crítico ainda está tocando); nos outros casos, o dado chacoalha.
+        if (message != null) AudioManager.Sfx(config.SfxDiceShake, 0.7f);
         die.transform.localScale = Vector3.one * (1.1f / Mathf.Max(0.01f, die.sprite != null ? die.sprite.bounds.size.x : 1f));
-        for (float t = 0f; t < 0.7f; t += Time.deltaTime)
+        for (float t = 0f; t < dieTime; t += Time.deltaTime)
         {
             die.sprite = config.DieFace(UnityEngine.Random.Range(1, 7));
             die.transform.Rotate(0f, 0f, 900f * Time.deltaTime);
             yield return null;
         }
         Destroy(die.gameObject);
+        StartCoroutine(FlipCard()); // aviso visual: a carta do chefe gira (vira o verso e volta)
 
         int old = SecretNumber;
         while (SecretNumber == old && Data.MaxNumber > Data.MinNumber)
@@ -653,6 +670,38 @@ public class BossController : MonoBehaviour
         // Destaque: o número mudou, as pistas antigas não valem mais.
         Fx.Popup("NEW NUMBER!", transform.position + Vector3.up * (sr.bounds.extents.y + 1.6f), new Color(1f, 0.42f, 0.18f), 11f, 1.8f);
         Fx.Shake(0.25f, 0.2f);
+    }
+
+    // Carta do chefe girando no próprio eixo (como virar uma carta na mesa): a escala X segue um
+    // cosseno, então a carta "afina" até sumir de lado e volta. Quando o cosseno fica negativo
+    // estamos vendo as COSTAS da carta → troca o sprite pelo verso. 2 voltas rápidas + um "pulo"
+    // de tamanho e um brilho branco, para o jogador perceber que o número mudou.
+    private bool flipping;
+    private Sprite flipFront; // frente da carta guardada durante o giro (para restaurar se morrer no meio)
+    private IEnumerator FlipCard()
+    {
+        if (flipping || sr == null) yield break;
+        flipping = true;
+        Sprite front = flipFront = sr.sprite;
+        AudioManager.Sfx(config.SfxNewNumber, 0.85f, 0f); // o som da troca de número toca junto com o giro
+        const float duration = 0.5f, turns = 2f;
+        for (float t = 0f; t < duration; t += Time.deltaTime)
+        {
+            float k = t / duration;
+            float ease = 1f - (1f - k) * (1f - k);               // começa rápido e desacelera
+            float cos = Mathf.Cos(ease * turns * 2f * Mathf.PI);
+            float punch = 1f + 0.25f * Mathf.Sin(k * Mathf.PI);  // cresce no meio e volta
+            // Largura mínima de 0,05 para a carta não sumir de vez (fica uma "linha" no meio do giro)
+            float width = Mathf.Max(0.05f, Mathf.Abs(cos));
+            visual.localScale = new Vector3(width * punch, punch, 1f);
+            if (config.CardBack != null) sr.sprite = cos < 0f ? config.CardBack : front;
+            sr.color = Color.Lerp(Color.white, new Color(1f, 0.85f, 0.6f), Mathf.Sin(k * Mathf.PI));
+            yield return null;
+        }
+        visual.localScale = Vector3.one;
+        sr.sprite = front;
+        sr.color = Color.white;
+        flipping = false;
     }
 
     // Tutorial: ao voltar uma dica o Coringa recupera a vida.
@@ -667,6 +716,9 @@ public class BossController : MonoBehaviour
     {
         IsDead = true;
         StopAllCoroutines(); // a IA e os ataques que rodam em paralelo (misturados)
+        // O StopAllCoroutines pode parar o HurtFlash no meio, com a luz branca ligada: apaga aqui.
+        if (flashLight != null) flashLight.intensity = 0f;
+        if (flipping) { visual.localScale = Vector3.one; sr.sprite = flipFront; flipping = false; } // morreu girando
         sr.color = Color.white;
         ClearWarnings();
         OnDefeated?.Invoke();

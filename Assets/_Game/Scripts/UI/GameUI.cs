@@ -59,7 +59,7 @@ public class GameUI : MonoBehaviour
         FusionPanel.Create(root, gm);
 
         // Banner central ("BOSS 1/3 — JACK")
-        var banner = UIFactory.Rect("Banner", root).Place(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 40f), new Vector2(640f, 80f));
+        var banner = UIFactory.Rect("Banner", root).Place(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(640f, 80f)); // centro exato da tela
         ui.bannerGroup = banner.gameObject.AddComponent<CanvasGroup>();
         ui.bannerGroup.alpha = 0f;
         var bannerBack = UIFactory.Image("Back", banner, new Color(0f, 0f, 0f, 0.55f));

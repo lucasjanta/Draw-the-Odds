@@ -75,6 +75,7 @@ public class GameManager : MonoBehaviour
     {
         Instance = this;
         GameTime.Reset(); // ao recarregar a cena, garante que nada ficou pausado/lento
+        AudioManager.SetLevels(config.SfxGains, config.SfxMakeupDb); // equalização dos sons
 
         Hand = new Hand(config.MaxHandSize);
         Fusion = new FusionController(Hand, config);
@@ -97,9 +98,17 @@ public class GameManager : MonoBehaviour
         PlayerHealth.SetMax(config.PlayerMaxHp, true);
         PlayerHealth.OnDied += HandlePlayerDied;
         PlayerHealth.OnDamaged += amount => Stats.damageTaken += amount;
-        Fusion.OnEnded += success => { if (success) { Stats.fusions++; AudioManager.Sfx(config.SfxFusion); } };
+        Fusion.OnEnded += success => { if (success) Stats.fusions++; }; // o som da carta nova toca no FusionPanel (na revelação)
         Fusion.OnStarted += () => AudioManager.Sfx(config.SfxPowerUp);
         PlayerHealth.OnDamaged += _ => AudioManager.Sfx(config.SfxPlayerHurt);
+        PlayerHealth.OnDied += () => AudioManager.Sfx(config.SfxPlayerDeath, 1f, 0f);
+        // Sons do movimento do player (eventos que o PlayerController já dispara)
+        player.OnJumped += () => AudioManager.Sfx(config.SfxJump, 0.7f, 0.08f);
+        player.OnDroppedThrough += () => AudioManager.Sfx(config.SfxJump, 0.45f, 0.05f, 0.75f); // mesmo som, mais grave
+        player.OnDashed += () => AudioManager.Sfx(config.SfxDash, 0.8f, 0.08f);
+        player.OnLanded += () => AudioManager.Sfx(config.SfxLand, 0.6f, 0.08f);
+        // Fusão: o "mix" toca quando as cartas começam a se juntar (o card_result continua no fim)
+        Fusion.OnResolved += (a, b, result) => AudioManager.Sfx(config.SfxMixResult, 0.9f, 0f);
         Stats.startTime = Time.time;
 
         // A janela da fusão e o preview do resultado dependem da dificuldade.
@@ -330,13 +339,25 @@ public class GameManager : MonoBehaviour
         return Boss;
     }
 
+    // "Match": quanto mais perto do número do chefe, maior o match (vale para dano e para cura de Copas).
+    // Mesma faixa da tabela de dano: 1 → match_max · 2 → match_mid · 3–4 → match_lower · 5+ → nada (já toca o "no damage").
+    // O número exato (distância 0) é o crítico, que tem som próprio.
+    private void PlayCloseness(int distance)
+    {
+        var clips = config.SfxCloseness;
+        if (clips == null || clips.Length < 3 || distance <= 0) return;
+        int index = distance == 1 ? 2 : distance == 2 ? 1 : distance <= 4 ? 0 : -1;
+        if (index >= 0) AudioManager.Sfx(clips[index], 0.75f, 0f);
+    }
+
     private void HandleBossHit(HitResult r)
     {
         if (r.isHeal) PlayerHealth.Heal(r.amount);
         if (r.isCritical) AudioManager.Sfx(config.SfxCritical, 1f, 0f);
         else if (r.isHeal) AudioManager.Sfx(config.SfxHeal);
         else if (r.amount > 0) AudioManager.Sfx(config.SfxHit);
-        else AudioManager.Sfx(config.SfxMiss, 0.45f, 0.15f); // acertou longe do número: som fraco
+        else AudioManager.Sfx(config.SfxMiss, 0.8f); // acertou longe do número: som próprio de "sem dano"
+        if (!r.isCritical) PlayCloseness(r.distance);
         if (r.isCritical) Stats.criticals++;
         if (r.bonusCards > 0)
         {
@@ -505,6 +526,22 @@ public class GameManager : MonoBehaviour
         return "pack";
     }
 
+    // Debug: só a cortina de cartas (cobre, espera "hold" segundos, revela). Ex.: call GameManager.DebugCurtain 3
+    public static string DebugCurtain(string hold)
+    {
+        if (Instance == null) return "no game";
+        float h = float.TryParse(hold, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 2f;
+        Instance.StartCoroutine(Instance.CurtainTest(h));
+        return "ok";
+    }
+
+    private IEnumerator CurtainTest(float hold)
+    {
+        yield return ui.Curtain.Cover();
+        yield return new WaitForSecondsRealtime(hold);
+        yield return ui.Curtain.Reveal();
+    }
+
     public static string DebugStart()
     {
         if (Instance == null || Instance.State != GameState.Title) return "not in title";
@@ -540,6 +577,14 @@ public class GameManager : MonoBehaviour
     public static string DebugConfirm() => Instance != null && Instance.Fusion.TryConfirm() ? "fused" : "fail";
 
     // Arremessa cartas com o número exato (testa crítico, troca de número e morte do chefe).
+    // Debug: força o chefe a trocar de número (testa o giro da carta). Ex.: call GameManager.DebugReroll
+    public static string DebugReroll()
+    {
+        if (Instance == null || Instance.Boss == null) return "no boss";
+        Instance.Boss.ForceReroll();
+        return "ok";
+    }
+
     public static string DebugCrit()
     {
         var gm = Instance;

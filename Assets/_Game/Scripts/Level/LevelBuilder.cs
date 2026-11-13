@@ -9,6 +9,7 @@ public class LevelBuilder
 {
     public const float FloorTop = -7.5f;     // o chão ocupa a faixa de baixo da tela (onde fica a mão)
     private const float PlatformHeight = 0.5f;   // colisor (one-way)
+    private const float PlatformSurfaceArc = 100f; // ângulo (graus) do topo que colide; o resto é atravessável
     private const float FeltThickness = 1.5f;    // visual: 24 px (bordas do 9-slice têm 8 px em cima e embaixo)
 
     // (x do centro, y do centro, largura) de cada plataforma, por layout.
@@ -95,6 +96,16 @@ public class LevelBuilder
             go.SetActive(true);
             go.transform.position = new Vector3(p.x, p.y, 0f);
             go.transform.localScale = new Vector3(p.z, PlatformHeight, 1f);
+            // Só o TOPO da plataforma segura o player. Com o arco de 180° as laterais e as quinas
+            // também colidiam (o contato de lado tem normal horizontal, bem na beira dos 180°) e
+            // travavam o dash/pulo na ponta da plataforma. Com 100° só contatos vindos de cima
+            // (até 50° de inclinação) contam; de lado e por baixo o player atravessa.
+            if (go.TryGetComponent(out PlatformEffector2D effector))
+            {
+                effector.surfaceArc = PlatformSurfaceArc;
+                effector.useSideFriction = false;
+                effector.useSideBounce = false;
+            }
             if (go.TryGetComponent(out SpriteRenderer sr))
             {
                 sr.color = platformColor;
