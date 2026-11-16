@@ -27,10 +27,10 @@ public static class Loc
         {
             if (current == null)
             {
-                // Primeira vez: português se o sistema estiver em português.
+                // Primeira vez: sempre inglês (o jogador troca nas Opções; a escolha fica salva).
+                // Antes usava o idioma do sistema, e no Brasil o jogo abria em português.
                 int saved = PlayerPrefs.GetInt(PrefKey, -1);
-                current = saved >= 0 ? (Language)saved
-                    : Application.systemLanguage == SystemLanguage.Portuguese ? Language.Portuguese : Language.English;
+                current = saved >= 0 ? (Language)saved : Language.English;
             }
             return current.Value;
         }
