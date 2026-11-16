@@ -147,9 +147,12 @@ Tools/            itch.io packaging script, Aseprite export script
 **Art**
 - Player character: [Adventurer](https://rvros.itch.io/animated-pixel-hero) by rvros
 - Playing cards (recolored and edited): [Assets for 8bit Playing card games](https://sdkfz181tiger.itch.io/assets-for-8bit-playing-card-games) by sdkfz181tiger
-- Dice: Boardgame Icons Pack by oddnumberofeyes
-- Background: Free Castle Interior Pixel Game Backgrounds by [CraftPix.net](https://craftpix.net)
+- Dice: [Boardgame icons pack](https://oddnumberofeyes.itch.io/boardgame-icons-pack) by oddnumberofeyes
+- Background: [Castle Tileset 16x16](https://pokrasmemas.itch.io/castletileset) by pokrasmemas
 - Board props and felt: [ToyZone](https://cursed-offerings.itch.io/toyzone) by CURSED OFFERINGS
+
+**Music**
+"Second Dealing", "Hypnotic Poison", "Trust Me" [T-studio](https://t-studio-tst.itch.io/) by みんなの創作支援サイトＴスタ 
 
 **Fonts**
 - Silkscreen by Jason Kottke (SIL Open Font License)
