@@ -9,11 +9,13 @@ using UnityEngine.UI;
 public class OptionsPanel : MonoBehaviour
 {
     private Slider master, music, effects;
-    private TextMeshProUGUI masterValue, musicValue, effectsValue, trackLabel, languageLabel;
+    private TextMeshProUGUI masterValue, musicValue, effectsValue, trackLabel, languageLabel, touchLabel;
+    private KeyBindingsPanel keys;
+    private GameObject keysButton, keysName;
 
     public static OptionsPanel Create(Transform parent, Action onBack)
     {
-        var panel = UIFactory.MenuPanel("Options", parent, new Vector2(300f, 222f));
+        var panel = UIFactory.MenuPanel("Options", parent, new Vector2(300f, 274f));
         var p = panel.gameObject.AddComponent<OptionsPanel>();
 
         var title = UIFactory.Text("Title", panel.transform, "OPTIONS", 20f, UIFactory.Gold, TextAlignmentOptions.Center);
@@ -32,12 +34,29 @@ public class OptionsPanel : MonoBehaviour
         // Pega o texto "Label" (não as cópias do contorno, que vêm antes na hierarquia)
         p.trackLabel = trackButton.transform.Find("Label").GetComponent<TextMeshProUGUI>();
 
-        // Idioma: ◄ ENGLISH ► / ◄ PORTUGUÊS ► (troca na hora, todas as telas)
+        // Idioma: ◄ ENGLISH ► → PORTUGUÊS → ESPAÑOL → FRANÇAIS → DEUTSCH → ITALIANO (troca na hora, todas as telas)
         var langName = UIFactory.Text("Language", panel.transform, "LANGUAGE", 11f, Color.white);
         langName.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(18f, -152f), new Vector2(70f, 16f));
         var langButton = UIFactory.Button("LanguageButton", panel.transform, "", new Vector2(150f, 18f), p.CycleLanguage, 10f);
         langButton.GetComponent<RectTransform>().Place(new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(92f, -152f), new Vector2(150f, 18f));
         p.languageLabel = langButton.transform.Find("Label").GetComponent<TextMeshProUGUI>().NoLoc();
+
+        // Controles de toque: AUTO (liga no celular ou ao tocar na tela) / ON / OFF
+        var touchName = UIFactory.Text("Touch", panel.transform, "TOUCH", 11f, Color.white);
+        touchName.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(18f, -178f), new Vector2(70f, 16f));
+        var touchButton = UIFactory.Button("TouchButton", panel.transform, "", new Vector2(150f, 18f), p.CycleTouch, 10f);
+        touchButton.GetComponent<RectTransform>().Place(new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(92f, -178f), new Vector2(150f, 18f));
+        p.touchLabel = touchButton.transform.Find("Label").GetComponent<TextMeshProUGUI>().NoLoc();
+
+        // Teclas do computador (some quando o jogo está só no toque)
+        var keysButton = UIFactory.Button("KeysButton", panel.transform, "CONTROLS", new Vector2(150f, 18f), () => p.ShowKeys(true), 10f);
+        keysButton.GetComponent<RectTransform>().Place(new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(92f, -204f), new Vector2(150f, 18f));
+        p.keysButton = keysButton.gameObject;
+        var keysName = UIFactory.Text("Keys", panel.transform, "KEYS", 11f, Color.white);
+        keysName.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(18f, -204f), new Vector2(70f, 16f));
+        p.keysName = keysName.gameObject;
+        p.keys = KeyBindingsPanel.Create(parent, () => p.ShowKeys(false));
+        Loc.OnChanged += p.HandleLanguageChanged; // idioma trocado por fora (portal, debug): atualiza "◄ ENGLISH ►"
 
         var back = UIFactory.Button("Back", panel.transform, "BACK", new Vector2(120f, 24f), onBack, 12f);
         back.GetComponent<RectTransform>().Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 12f), new Vector2(120f, 24f));
@@ -72,6 +91,7 @@ public class OptionsPanel : MonoBehaviour
     public void Show(bool show)
     {
         gameObject.SetActive(show);
+        keys.Show(false);
         if (!show) return;
         var audio = AudioManager.Instance;
         master.SetValueWithoutNotify(audio.GetVolume(AudioBus.Master));
@@ -89,15 +109,53 @@ public class OptionsPanel : MonoBehaviour
         RefreshLabels();
     }
 
+    private void CycleTouch()
+    {
+        VirtualInput.Mode = (TouchMode)(((int)VirtualInput.Mode + 1) % 3);
+        RefreshLabels();
+    }
+
+    // Debug (ponte do Editor): call OptionsPanel.DebugKeys  → abre a tela de teclas do menu principal
+    public static string DebugKeys()
+    {
+        OptionsPanel p = null;
+        foreach (var o in FindObjectsByType<OptionsPanel>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            if (p == null || o.gameObject.activeInHierarchy) p = o; // prefere o que está aberto
+        if (p == null) return "no options";
+        p.ShowKeys(true);
+        return "keys open";
+    }
+
+    private void HandleLanguageChanged()
+    {
+        if (this != null && gameObject.activeInHierarchy) RefreshLabels();
+    }
+
+    private void OnDestroy() => Loc.OnChanged -= HandleLanguageChanged;
+
+    private void ShowKeys(bool show)
+    {
+        keys.Show(show);
+        gameObject.SetActive(!show);
+        if (!show) RefreshLabels();
+    }
+
     private void CycleLanguage()
     {
-        Loc.Toggle();
+        Loc.Next();
         RefreshLabels();
     }
 
     private void RefreshLabels()
     {
         languageLabel.text = $"◄ {Loc.LanguageName} ►";
+        var mode = VirtualInput.Mode;
+        string auto = Loc.T(VirtualInput.Active ? "AUTO (ON)" : "AUTO");
+        touchLabel.text = "◄ " + (mode == TouchMode.Auto ? auto : Loc.T(mode == TouchMode.On ? "ON" : "OFF")) + " ►";
+        // Celular sem teclado: a linha de teclas não serve para nada
+        bool hasKeyboard = UnityEngine.InputSystem.Keyboard.current != null && !Application.isMobilePlatform;
+        keysButton.SetActive(hasKeyboard);
+        keysName.SetActive(hasKeyboard);
         int track = GameManager.MusicTrackChoice;
         trackLabel.text = track == 0 ? "◄ AUTO ►" : $"◄ GAMEPLAY {track} ►";
         masterValue.text = Mathf.RoundToInt(master.value * 100f) + "%";

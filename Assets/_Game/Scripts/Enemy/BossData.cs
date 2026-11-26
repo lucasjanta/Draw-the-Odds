@@ -101,6 +101,50 @@ public class BossData
     public Color BackgroundColor => backgroundColor;
     public Color PlatformColor => platformColor;
 
+    // ===================== Modo infinito =====================
+    // Cópia deste chefe mais forte para a rodada "round" (1 = igual ao original) + a regra da casa.
+    // MemberwiseClone = cópia rasa: as listas (faces do dado, sprites) são compartilhadas, o que não tem
+    // problema porque elas não são alteradas aqui.
+    public BossData ForEndless(int round, EndlessRule rule)
+    {
+        var d = (BossData)MemberwiseClone();
+        int k = round - 1;      // rodadas já vencidas
+        int loops = k / 3;      // voltas completas Valete → Dama → Rei
+
+        d.maxHp = Mathf.RoundToInt(maxHp * (1f + 0.12f * k));
+        d.maxNumber = Mathf.Min(26, maxNumber + 2 * loops);
+        d.idleTime = idleTime * Mathf.Max(0.55f, 1f - 0.035f * k);
+        d.telegraphTime = telegraphTime * Mathf.Max(0.6f, 1f - 0.03f * k);
+        d.moveSpeed = moveSpeed * Mathf.Min(1.5f, 1f + 0.03f * k);
+        d.diceSpeedMultiplier = diceSpeedMultiplier * Mathf.Min(1.6f, 1f + 0.04f * k);
+        d.enrage = Mathf.Min(0.8f, enrage + 0.03f * k);
+        d.comboChance = Mathf.Min(0.75f, comboChance + 0.04f * k);
+        d.chainChance = Mathf.Min(0.5f, chainChance + 0.02f * k);
+
+        switch (rule)
+        {
+            case EndlessRule.Shuffle:
+                d.rerollEverySeconds = rerollEverySeconds > 0f ? Mathf.Min(rerollEverySeconds, 15f) : 18f;
+                break;
+            case EndlessRule.LoadedDice:
+                d.dangerousDice = true;
+                d.diceSpeedMultiplier *= 1.15f;
+                break;
+            case EndlessRule.DoubleTrouble:
+                d.comboChance = Mathf.Min(0.9f, d.comboChance + 0.3f);
+                d.chainChance = Mathf.Min(0.65f, d.chainChance + 0.15f);
+                break;
+            case EndlessRule.WideOpen:
+                d.minNumber = 1;
+                d.maxNumber = 26;
+                break;
+            case EndlessRule.ThickSkin:
+                d.maxHp = Mathf.RoundToInt(d.maxHp * 1.3f);
+                break;
+        }
+        return d;
+    }
+
     public BossData() { }
 
     // Construtor usado só para criar os valores padrão dos chefes.

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(Rigidbody2D), typeof(Collider2D))]
 public class PlayerController : MonoBehaviour
@@ -63,7 +64,7 @@ public class PlayerController : MonoBehaviour
     private Collider2D bodyCollider;
     private Animator animator;
     private SpriteRenderer spriteRenderer;
-    private InputSystem_Actions input;
+
     private StateMachine stateMachine;
     private Collider2D groundUnderFeet;
     private string currentAnimation;
@@ -105,7 +106,6 @@ public class PlayerController : MonoBehaviour
         animator = GetComponentInChildren<Animator>();             // está no filho "Visual"
         spriteRenderer = GetComponentInChildren<SpriteRenderer>();
 
-        input = new InputSystem_Actions();
 
         // "this" = este PlayerController. Cada estado guarda a referência para usar.
         IdleState = new PlayerIdleState(this);
@@ -117,9 +117,6 @@ public class PlayerController : MonoBehaviour
         stateMachine = new StateMachine();
     }
 
-    private void OnEnable() => input.Player.Enable();
-    private void OnDisable() => input.Player.Disable();
-    private void OnDestroy() => input.Dispose();
 
     private void Start()
     {
@@ -151,16 +148,27 @@ public class PlayerController : MonoBehaviour
         {
             MoveInput = Vector2.zero;
             JumpHeld = false;
+            VirtualInput.ConsumeJump(); // toque durante a pausa não vira pulo depois
+            VirtualInput.ConsumeDash();
             return;
         }
 
-        MoveInput = input.Player.Move.ReadValue<Vector2>();
-        JumpHeld = input.Player.Jump.IsPressed();
+        // Teclado (teclas configuráveis, KeyBindings) + controle (gamepad) + toque (VirtualInput) somados.
+        var pad = Gamepad.current;
+        Vector2 move = VirtualInput.Move;
+        if (KeyBindings.Held(GameKey.Left)) move.x -= 1f;
+        if (KeyBindings.Held(GameKey.Right)) move.x += 1f;
+        if (KeyBindings.Held(GameKey.Down)) move.y -= 1f;
+        if (pad != null) move += pad.leftStick.ReadValue() + pad.dpad.ReadValue();
+        MoveInput = Vector2.ClampMagnitude(new Vector2(Mathf.Clamp(move.x, -1f, 1f), Mathf.Clamp(move.y, -1f, 1f)), 1.42f);
+        JumpHeld = KeyBindings.Held(GameKey.Jump) || (pad != null && pad.buttonSouth.isPressed) || VirtualInput.JumpHeld;
 
-        if (input.Player.Sprint.WasPressedThisFrame())   // "Sprint" = Shift no InputSystem_Actions
+        bool padDash = pad != null && (pad.buttonWest.wasPressedThisFrame || pad.rightShoulder.wasPressedThisFrame);
+        if (KeyBindings.Pressed(GameKey.Dash) | padDash | VirtualInput.ConsumeDash())
             lastDashPressedTime = Time.time;
 
-        if (input.Player.Jump.WasPressedThisFrame())
+        bool padJump = pad != null && pad.buttonSouth.wasPressedThisFrame;
+        if (KeyBindings.Pressed(GameKey.Jump) | padJump | VirtualInput.ConsumeJump())
             lastJumpPressedTime = Time.time; // guarda QUANDO apertou (jump buffer)
     }
 

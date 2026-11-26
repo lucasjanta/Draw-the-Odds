@@ -44,8 +44,10 @@ public class CardProjectile : MonoBehaviour
         p.card = card;
         p.target = target;
         p.speed = config.CardSpeed;
-        p.homing = config.CardHomingDegreesPerSecond;
-        p.cone = config.CardHomingConeDegrees;
+        // No toque mirar com o dedo é menos preciso que com o mouse: a carta corrige mais a rota.
+        bool touch = VirtualInput.Active;
+        p.homing = config.CardHomingDegreesPerSecond * (touch ? config.TouchHomingMultiplier : 1f);
+        p.cone = touch ? config.TouchHomingConeDegrees : config.CardHomingConeDegrees;
         p.body = body;
         p.spin = spin;
         p.sprite = sr;

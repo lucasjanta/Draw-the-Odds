@@ -9,6 +9,7 @@ public class FusionPanel : MonoBehaviour
 {
     private const float SlotScale = 1f;  // 58×80 já é grande; escala inteira mantém a pixel art nítida
     private const float SlotX = 72f;
+    private const float PanelY = 62f;    // centro do painel acima do meio da tela (a mão fica embaixo)
 
     private GameManager gm;
     private CanvasGroup group;
@@ -17,12 +18,14 @@ public class FusionPanel : MonoBehaviour
     private Image timerFill, flash;
     private CardView slotA, slotB, result;
     private GameObject frameA, frameB;
+    private TextMeshProUGUI[] keyA, keyB;  // "Q"/"E" no teclado, "1"/"2" no toque
+    private GameObject[] buttons;
     private float errorTimer;
     private Coroutine resolveRoutine;
 
     public static FusionPanel Create(Transform parent, GameManager gm)
     {
-        var rt = UIFactory.Rect("FusionPanel", parent).Place(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 56f), new Vector2(320f, 190f));
+        var rt = UIFactory.Rect("FusionPanel", parent).Place(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, PanelY), new Vector2(320f, 212f));
         var p = rt.gameObject.AddComponent<FusionPanel>();
         p.gm = gm;
         p.root = rt;
@@ -41,8 +44,10 @@ public class FusionPanel : MonoBehaviour
         ghost.gameObject.SetActive(false);
         p.timerFill = timer.GetComponent<Image>();
 
-        p.slotA = MakeSlot(rt, gm, -SlotX, "Q", new Color32(0xFF, 0xA5, 0x2E, 0xFF), out p.frameA);
-        p.slotB = MakeSlot(rt, gm, SlotX, "E", new Color32(0xFF, 0x6E, 0xC7, 0xFF), out p.frameB);
+        p.slotA = MakeSlot(rt, gm, -SlotX, "Q", new Color32(0xFF, 0xA5, 0x2E, 0xFF), out p.frameA, out p.keyA);
+        p.slotB = MakeSlot(rt, gm, SlotX, "E", new Color32(0xFF, 0x6E, 0xC7, 0xFF), out p.frameB, out p.keyB);
+        FusionSlotTarget.Attach(p.frameA, true);
+        FusionSlotTarget.Attach(p.frameB, false);
 
         p.opText = UIFactory.Text("Op", rt, "", 34f, Color.white, TextAlignmentOptions.Center);
         p.opText.fontStyle = FontStyles.Bold;
@@ -65,12 +70,21 @@ public class FusionPanel : MonoBehaviour
 
         p.errorText = UIFactory.Text("Error", rt, "", 11f, new Color32(0xFF, 0x5A, 0x5A, 0xFF), TextAlignmentOptions.Center);
         p.errorText.fontStyle = FontStyles.Bold;
-        p.errorText.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 30f), new Vector2(300f, 14f));
+        p.errorText.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 52f), new Vector2(300f, 14f));
 
         p.help = UIFactory.Text("Help", rt, HelpText(), 8f, new Color(1f, 1f, 1f, 0.85f), TextAlignmentOptions.Center).NoLoc();
         Loc.OnChanged += () => { if (p != null) p.help.text = HelpText(); };
+        VirtualInput.OnModeChanged += () => { if (p != null) p.help.text = HelpText(); };
+        KeyBindings.OnChanged += () => { if (p != null) p.help.text = HelpText(); };
         p.help.lineSpacing = 4f;
-        p.help.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 4f), new Vector2(300f, 24f));
+        p.help.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 28f), new Vector2(300f, 24f));
+
+        // Botões MERGE / SKIP (toque e mouse). No PC o clique em qualquer lugar continua valendo.
+        var skip = UIFactory.Button("Skip", rt, "SKIP", new Vector2(90f, 20f), () => gm.Fusion.Skip(), 10f);
+        skip.GetComponent<RectTransform>().Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(-56f, 6f), new Vector2(90f, 20f));
+        var merge = UIFactory.Button("Merge", rt, "MERGE", new Vector2(90f, 20f), () => gm.Fusion.TryConfirm(), 10f);
+        merge.GetComponent<RectTransform>().Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(56f, 6f), new Vector2(90f, 20f));
+        p.buttons = new[] { skip.gameObject, merge.gameObject };
 
         gm.Fusion.OnStarted += p.HandleStarted;
         gm.Fusion.OnChanged += p.Refresh;
@@ -81,15 +95,31 @@ public class FusionPanel : MonoBehaviour
         return p;
     }
 
-    private static string HelpText() => Loc.Pick(
-        "<color=#FFD447>SCROLL</color> pick  <color=#FFD447>Q</color>/<color=#FFD447>E</color> place\n" +
-        "<color=#FFD447>L-CLICK</color> merge  <color=#FFD447>R-CLICK</color> skip",
-        "<color=#FFD447>RODINHA</color> escolhe  <color=#FFD447>Q</color>/<color=#FFD447>E</color> coloca\n" +
-        "<color=#FFD447>CLIQUE ESQ.</color> funde  <color=#FFD447>CLIQUE DIR.</color> pula");
+    private static string Y(string s) => $"<color=#FFD447>{s}</color>";
 
-    private static CardView MakeSlot(RectTransform parent, GameManager gm, float x, string key, Color keyColor, out GameObject frameObject)
+    private static string HelpText()
+    {
+        if (VirtualInput.Active)
+            return Loc.Pick($"{Y("DRAG")} 2 cards into the slots\n(or tap a card, then a slot)",
+                            $"{Y("ARRASTE")} 2 cartas para os espaços\n(ou toque na carta e depois no espaço)",
+                            $"{Y("ARRASTRA")} 2 cartas a los huecos\n(o toca una carta y luego un hueco)",
+                            $"{Y("GLISSE")} 2 cartes dans les emplacements\n(ou touche une carte, puis un emplacement)",
+                            $"{Y("ZIEH")} 2 Karten in die Plätze\n(oder tippe eine Karte, dann einen Platz)",
+                            $"{Y("TRASCINA")} 2 carte negli slot\n(o tocca una carta e poi uno slot)");
+        string qe = Y(KeyBindings.Name(GameKey.SlotA)) + "/" + Y(KeyBindings.Name(GameKey.SlotB));
+        return Loc.Pick(
+            $"{Y("SCROLL")} pick  {qe} place (or drag)\n{Y("L-CLICK")} merge  {Y("R-CLICK")} skip",
+            $"{Y("RODINHA")} escolhe  {qe} coloca (ou arraste)\n{Y("CLIQUE ESQ.")} funde  {Y("CLIQUE DIR.")} pula",
+            $"{Y("RUEDA")} elige  {qe} coloca (o arrastra)\n{Y("CLIC IZQ.")} fusiona  {Y("CLIC DER.")} salta",
+            $"{Y("MOLETTE")} choisir  {qe} placer (ou glisser)\n{Y("CLIC G.")} fusionner  {Y("CLIC D.")} passer",
+            $"{Y("MAUSRAD")} wählen  {qe} ablegen (oder ziehen)\n{Y("LINKSKLICK")} verschmelzen  {Y("RECHTSKLICK")} überspringen",
+            $"{Y("ROTELLA")} scegli  {qe} metti (o trascina)\n{Y("CLIC SX")} fondi  {Y("CLIC DX")} salta");
+    }
+
+    private static CardView MakeSlot(RectTransform parent, GameManager gm, float x, string key, Color keyColor, out GameObject frameObject, out TextMeshProUGUI[] keyTexts)
     {
         var frame = UIFactory.Image("Frame " + key, parent, new Color(1f, 1f, 1f, 0.1f));
+        frame.raycastTarget = true; // recebe a carta arrastada / o toque
         frame.rectTransform.Place(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(x, -4f),
             new Vector2(CardView.Width, CardView.Height) * SlotScale + Vector2.one * 6f);
         var ghostKey = UIFactory.Text("Ghost", frame.transform, key, 30f, new Color(keyColor.r, keyColor.g, keyColor.b, 0.35f), TextAlignmentOptions.Center);
@@ -97,8 +127,10 @@ public class FusionPanel : MonoBehaviour
         ghostKey.rectTransform.Stretch();
         var label = UIFactory.Text("Key", frame.transform, key, 14f, keyColor, TextAlignmentOptions.Center);
         label.fontStyle = FontStyles.Bold;
-        label.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -1f), new Vector2(30f, 16f));
+        // Tecla/número EM CIMA do espaço (embaixo ficava encostado no texto de ajuda)
+        label.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 0f), new Vector2(0f, 1f), new Vector2(30f, 16f));
         frameObject = frame.gameObject;
+        keyTexts = new[] { ghostKey.NoLoc(), label.NoLoc() };
 
         var view = CardView.Create(parent, gm.Config, false);
         view.Rect.Place(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(x, -4f), new Vector2(CardView.Width, CardView.Height));
@@ -125,6 +157,7 @@ public class FusionPanel : MonoBehaviour
         opText.alpha = 1f;
         help.alpha = 1f;
         preview.alpha = 1f;
+        foreach (var b in buttons) b.SetActive(true);
         result.gameObject.SetActive(false);
         flash.color = new Color(1f, 1f, 1f, 0f);
         errorTimer = 0f;
@@ -136,6 +169,8 @@ public class FusionPanel : MonoBehaviour
         if (!f.AcceptsInput) return;
         Color c = FusionRules.GetColor(f.Type);
         title.text = FusionRules.Title(f.Type);
+        foreach (var t in keyA) t.text = VirtualInput.Active ? "1" : KeyBindings.Name(GameKey.SlotA);
+        foreach (var t in keyB) t.text = VirtualInput.Active ? "2" : KeyBindings.Name(GameKey.SlotB);
         title.color = c;
         opText.text = FusionRules.Symbol(f.Type);
         opText.color = c;
@@ -192,6 +227,7 @@ public class FusionPanel : MonoBehaviour
             slotB.Rect.localRotation = Quaternion.Euler(0f, 0f, -10f * k);
             opText.alpha = 1f - k;
             help.alpha = 1f - k;
+            foreach (var button in buttons) button.SetActive(false);
             preview.alpha = 1f - k;
             yield return null;
         }
@@ -276,6 +312,8 @@ public class FusionPanel : MonoBehaviour
     private void Update()
     {
         var f = gm.Fusion;
+        // Invisível = não bloqueia toques/cliques no meio da tela.
+        group.blocksRaycasts = group.interactable = f.AcceptsInput;
         if (f.AcceptsInput)
         {
             group.alpha = Mathf.MoveTowards(group.alpha, 1f, Time.unscaledDeltaTime * 8f);
@@ -290,7 +328,7 @@ public class FusionPanel : MonoBehaviour
 
         errorTimer -= Time.unscaledDeltaTime;
         errorText.gameObject.SetActive(errorTimer > 0f);
-        Vector2 basePos = new Vector2(0f, 56f);
+        Vector2 basePos = new Vector2(0f, PanelY);
         root.anchoredPosition = basePos + (errorTimer > 1.15f ? Random.insideUnitCircle * 3f : Vector2.zero);
     }
 }

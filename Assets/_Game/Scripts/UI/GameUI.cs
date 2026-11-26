@@ -12,10 +12,16 @@ public class GameUI : MonoBehaviour
     private Image slowTint;
     private CanvasGroup bannerGroup, endGroup;
     private MainMenu mainMenu;
-    private LeaderboardPanel victoryBoard;
+    private LeaderboardPanel victoryBoard, endlessBoard;
+    private GameObject endButtons;
+    private Button continueButton, rankingButton;
+    private TextMeshProUGUI continueLabel;
+    public QuickTips Tips { get; private set; }
+    public bool GameOverBoardOpen => endlessBoard != null && endlessBoard.gameObject.activeSelf;
     public PauseMenu Pause { get; private set; }
     public DifficultyPanel Difficulty { get; private set; }
     public CardCurtain Curtain { get; private set; }
+    public StoryDialog Story { get; private set; }
     private TextMeshProUGUI bannerTitle, bannerSub, endTitle, endBody;
     private Coroutine bannerRoutine;
     private CanvasGroup promptGroup;
@@ -73,10 +79,15 @@ public class GameUI : MonoBehaviour
         ui.bannerTitle.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 8f), new Vector2(600f, 44f));
 
         ui.BuildPrompt(root);
+        ui.Tips = QuickTips.Create(root, gm);
         ui.endGroup = BuildEndPanel(root, out ui.endTitle, out ui.endBody);
+        ui.BuildEndButtons(ui.endGroup.transform);
         ui.victoryBoard = LeaderboardPanel.Create(root, "MAIN MENU", gm.BackToMainMenu);
+        ui.endlessBoard = LeaderboardPanel.Create(root, "BACK", () => ui.endlessBoard.Hide());
+        TouchControls.Create(root, gm);
         ui.mainMenu = MainMenu.Create(root, gm);
         ui.Difficulty = DifficultyPanel.Create(root);
+        ui.Story = StoryDialog.Create(root, gm.Config); // abaixo da pausa: o menu de pausa abre por cima do diálogo
         ui.Pause = PauseMenu.Create(root, gm);
         ui.Curtain = CardCurtain.Create(root, gm.Config);
         EnsureEventSystem();
@@ -142,6 +153,19 @@ public class GameUI : MonoBehaviour
         promptBack.GetComponent<RectTransform>().Place(new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(4f, -6f), new Vector2(16f, 16f));
     }
 
+    // Com os controles de toque, o canto de baixo à direita é dos botões PULO/DASH: a caixa iria para trás deles.
+    private const float PromptTopY = -44f; // abaixo do botão de pausa
+    private bool promptOnTop;
+
+    private void PlacePrompt(float height)
+    {
+        promptOnTop = VirtualInput.Active;
+        if (promptOnTop)
+            promptRect.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, PromptTopY), new Vector2(PromptWidth, height));
+        else
+            promptRect.Place(new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-8f, 8f), new Vector2(PromptWidth, height));
+    }
+
     public void ShowPrompt(string text, bool clickToContinue, bool low = false)
     {
         // low era usado para fugir do painel de fusão; no canto de baixo a caixa já não atrapalha.
@@ -153,7 +177,7 @@ public class GameUI : MonoBehaviour
         float textWidth = PromptWidth - 24f - 8f;
         float textHeight = promptText.GetPreferredValues(text, textWidth, 0f).y;
         float height = Mathf.Max(30f, textHeight + 15f + (clickToContinue ? 10f : 0f));
-        promptRect.Place(new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-8f, 8f), new Vector2(PromptWidth, height));
+        PlacePrompt(height);
 
         // Texto novo: recomeça a animação de entrada (vem da direita, aparecendo)
         promptVisible = true;
@@ -192,11 +216,94 @@ public class GameUI : MonoBehaviour
         yield return Fade(bannerGroup, 0f, 0.3f);
     }
 
-    public void ShowGameOver(string bossName)
+    // Botões da derrota: CONTINUAR (anúncio) e RECOMEÇAR do mesmo tamanho, lado a lado
+    // (regra dos portais: a opção sem anúncio nunca é menor), MENU embaixo e RANKING no infinito.
+    private void BuildEndButtons(Transform parent)
+    {
+        var row = UIFactory.Rect("EndButtons", parent).Place(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -62f), new Vector2(380f, 90f));
+        endButtons = row.gameObject;
+        var size = new Vector2(176f, 28f);
+
+        continueButton = UIFactory.Button("Continue", row, "", size, gm.ContinueWithAd, 11f);
+        continueButton.GetComponent<RectTransform>().Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(-94f, 0f), size);
+        continueLabel = continueButton.transform.Find("Label").GetComponent<TextMeshProUGUI>().NoLoc();
+
+        var restart = UIFactory.Button("Restart", row, "", size, gm.RestartRun, 11f);
+        restart.GetComponent<RectTransform>().Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(94f, 0f), size);
+        restartLabel = restart.transform.Find("Label").GetComponent<TextMeshProUGUI>().NoLoc();
+
+        var menu = UIFactory.Button("Menu", row, "MAIN MENU", new Vector2(120f, 22f), gm.BackToMainMenu, 10f);
+        menu.GetComponent<RectTransform>().Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(-66f, -40f), new Vector2(120f, 22f));
+        rankingButton = UIFactory.Button("Ranking", row, "RANKING", new Vector2(120f, 22f), ShowEndlessBoard, 10f);
+        rankingButton.GetComponent<RectTransform>().Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(66f, -40f), new Vector2(120f, 22f));
+        endButtons.SetActive(false);
+    }
+
+    private TextMeshProUGUI restartLabel;
+
+    public void ShowGameOver(GameManager gm)
     {
         endTitle.text = "<color=#E84A5F>YOU FOLDED</color>";
-        endBody.text = $"The {bossName} called your bluff.\n\n<color=#FFD447>CLICK TO START OVER FROM THE JACK</color>";
+        if (GameManager.EndlessMode)
+        {
+            int r = gm.EndlessRound, b = gm.EndlessBeaten;
+            bool one = b == 1;
+            endBody.text = Loc.Pick(
+                $"ENDLESS - ROUND {r}\n<color=#FFD447>{b} {(one ? "BOSS" : "BOSSES")} BEATEN</color>",
+                $"INFINITO - RODADA {r}\n<color=#FFD447>{b} {(one ? "CHEFE VENCIDO" : "CHEFES VENCIDOS")}</color>",
+                $"INFINITO - RONDA {r}\n<color=#FFD447>{b} {(one ? "JEFE VENCIDO" : "JEFES VENCIDOS")}</color>",
+                $"INFINI - MANCHE {r}\n<color=#FFD447>{b} {(one ? "BOSS VAINCU" : "BOSS VAINCUS")}</color>",
+                $"ENDLOS - RUNDE {r}\n<color=#FFD447>{b} {(one ? "BOSS BESIEGT" : "BOSSE BESIEGT")}</color>",
+                $"INFINITO - ROUND {r}\n<color=#FFD447>{b} BOSS {(one ? "SCONFITTO" : "SCONFITTI")}</color>");
+        }
+        else
+        {
+            string boss = Loc.T(gm.CurrentBossData.DisplayName);
+            endBody.text = Loc.Pick($"The {gm.CurrentBossData.DisplayName} called your bluff.", $"O {boss} pagou pra ver o seu blefe.",
+                                    $"{boss} descubrió tu farol.", $"{boss} a démasqué ton bluff.",
+                                    $"{boss} hat deinen Bluff durchschaut.", $"{boss} ha visto il tuo bluff.");
+        }
+        restartLabel.text = GameManager.EndlessMode
+            ? Loc.Pick("RESTART (ROUND 1)", "RECOMEÇAR (RODADA 1)", "REINICIAR (RONDA 1)", "RECOMMENCER (MANCHE 1)", "NEUSTART (RUNDE 1)", "RICOMINCIA (ROUND 1)")
+            : Loc.Pick("RESTART FROM THE JACK", "RECOMEÇAR DO VALETE", "REINICIAR DESDE LA J", "RECOMMENCER AU VALET", "NEUSTART BEIM BUBEN", "RICOMINCIA DAL FANTE");
+        endButtons.SetActive(true);
+        RefreshGameOverButtons();
         StartCoroutine(Fade(endGroup, 1f, 0.5f));
+    }
+
+    // CONTINUAR só aparece com anúncio disponível e uma vez por chefe/rodada.
+    public void RefreshGameOverButtons()
+    {
+        bool canContinue = gm.CanContinue;
+        continueButton.gameObject.SetActive(canContinue);
+        continueLabel.text = GameManager.EndlessMode
+            ? Loc.Pick("► AD: RETRY THIS ROUND", "► ANÚNCIO: REPETIR RODADA", "► ANUNCIO: REPETIR RONDA",
+                       "► PUB : REJOUER LA MANCHE", "► WERBUNG: RUNDE WIEDERHOLEN", "► PUBBLICITÀ: RIPROVA IL ROUND")
+            : Loc.Pick("► AD: RETRY THIS BOSS", "► ANÚNCIO: REPETIR CHEFE", "► ANUNCIO: REPETIR JEFE",
+                       "► PUB : REJOUER CE BOSS", "► WERBUNG: BOSS WIEDERHOLEN", "► PUBBLICITÀ: RIPROVA IL BOSS");
+        // Sem o CONTINUAR, o RECOMEÇAR vai para o centro.
+        var restartRect = (RectTransform)restartLabel.transform.parent;
+        restartRect.anchoredPosition = new Vector2(canContinue ? 94f : 0f, 0f);
+        rankingButton.gameObject.SetActive(GameManager.EndlessMode && gm.EndlessBeaten > 0);
+        var menuRect = (RectTransform)endButtons.transform.Find("Menu");
+        menuRect.anchoredPosition = new Vector2(rankingButton.gameObject.activeSelf ? -66f : 0f, -40f);
+    }
+
+    // Infinito: ranking próprio (chefes vencidos). Abre por cima da tela de derrota.
+    private void ShowEndlessBoard()
+    {
+        int time = Mathf.Max(1, Mathf.RoundToInt(gm.Stats.Elapsed));
+        var run = new LeaderboardClient.Entry
+        {
+            time_sec = time,
+            cards_thrown = gm.Stats.cardsThrown,
+            criticals = gm.Stats.criticals,
+            fusions = gm.Stats.fusions,
+            damage_taken = gm.Stats.damageTaken,
+            deaths = gm.Stats.deaths,
+            score = LeaderboardClient.EndlessScore(gm.EndlessBeaten, time),
+        };
+        endlessBoard.ShowEndless(run);
     }
 
     public void ShowVictory(GameManager.RunStats stats, float seconds, global::Difficulty difficulty)
@@ -237,14 +344,31 @@ public class GameUI : MonoBehaviour
         group.alpha = target;
     }
 
+    private CanvasScaler scaler;
+
+    // A UI foi desenhada para 640×360. Tela mais larga que 16:9 (celular 20:9): segue a ALTURA, senão
+    // os menus em coluna passam da borda de baixo. Nas outras telas fica como sempre foi (meio a meio).
+    private void FitCanvas()
+    {
+        if (scaler == null) scaler = GetComponent<CanvasScaler>();
+        float match = (float)Screen.width / Mathf.Max(1, Screen.height) > 16f / 9f + 0.01f ? 1f : 0.5f;
+        if (scaler.matchWidthOrHeight != match) scaler.matchWidthOrHeight = match;
+    }
+
     private void Update()
     {
+        FitCanvas();
         // Entrada/saída da caixa do tutorial: fade + desliza para a direita (tempo real)
         float dt = Time.unscaledDeltaTime;
         promptGroup.alpha = Mathf.MoveTowards(promptGroup.alpha, promptVisible ? 1f : 0f, dt * 5f);
         promptSlide = Mathf.MoveTowards(promptSlide, promptVisible ? 0f : 1f, dt * 4f);
         float eased = promptSlide * promptSlide; // desacelera ao chegar
-        promptRect.anchoredPosition = new Vector2(-8f + eased * PromptSlideDistance, 8f);
+        // No toque a caixa fica no topo (embaixo do botão de pausa) e desce; no PC, canto de baixo vindo da direita.
+        bool top = VirtualInput.Active;
+        if (top != promptOnTop) PlacePrompt(promptRect.sizeDelta.y);
+        promptRect.anchoredPosition = top
+            ? new Vector2(0f, PromptTopY + eased * PromptSlideDistance)
+            : new Vector2(-8f + eased * PromptSlideDistance, 8f);
         promptGroup.blocksRaycasts = promptVisible; // a seta só recebe clique com a caixa à mostra
 
         float target = gm.Fusion.Active ? 0.5f : 0f; // escurece a tela com o tempo parado

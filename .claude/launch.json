@@ -1,29 +1,51 @@
-﻿{
-    "version":  "0.0.1",
-    "configurations":  [
-                           {
-                               "name":  "webgl-build",
-                               "runtimeExecutable":  "python",
-                               "runtimeArgs":  [
-                                                   "-m",
-                                                   "http.server",
-                                                   "8123",
-                                                   "--directory",
-                                                   "Builds/WebGL"
-                                               ],
-                               "port":  8123
-                           },
-                           {
-                               "name":  "zip-test",
-                               "runtimeExecutable":  "python",
-                               "runtimeArgs":  [
-                                                   "-m",
-                                                   "http.server",
-                                                   "8124",
-                                                   "--directory",
-                                                   "C:\\Users\\lucas\\AppData\\Local\\Temp\\claude\\4686c68f66b9e109\\4b20693a-ff5e-41b8-9aa8-a373ed3929ba\\scratchpad\\zipteste"
-                                               ],
-                               "port":  8124
-                           }
-                       ]
+{
+    "version": "0.0.1",
+    "configurations": [
+        {
+            "name": "webgl-build",
+            "runtimeExecutable": "python",
+            "runtimeArgs": [
+                "-m",
+                "http.server",
+                "8123",
+                "--directory",
+                "Builds/WebGL"
+            ],
+            "port": 8123
+        },
+        {
+            "name": "zip-test",
+            "runtimeExecutable": "python",
+            "runtimeArgs": [
+                "-m",
+                "http.server",
+                "8124",
+                "--directory",
+                "C:\\Users\\lucas\\AppData\\Local\\Temp\\claude\\4686c68f66b9e109\\4b20693a-ff5e-41b8-9aa8-a373ed3929ba\\scratchpad\\zipteste"
+            ],
+            "port": 8124
+        },
+        {
+            "name": "gamepix-build",
+            "runtimeExecutable": "python",
+            "runtimeArgs": [
+                "-m",
+                "http.server",
+                "8125",
+                "--directory",
+                "Builds/GamePix"
+            ],
+            "port": 8125
+        },
+        {
+            "name": "crazygames-build",
+            "runtimeExecutable": "python",
+            "runtimeArgs": [
+                "Tools/serve_webgl.py",
+                "Builds/CrazyGamesRelease",
+                "8126"
+            ],
+            "port": 8126
+        }
+    ]
 }

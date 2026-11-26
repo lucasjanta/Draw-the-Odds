@@ -90,7 +90,7 @@ public class FusionController
     public bool TryConfirm()
     {
         if (!AcceptsInput) return false;
-        if (!BothSlotsFilled) { OnRejected?.Invoke("PUT CARDS IN Q AND E"); return false; }
+        if (!BothSlotsFilled) { OnRejected?.Invoke("PUT 2 CARDS IN THE SLOTS"); return false; }
 
         Card a = hand[SlotA], b = hand[SlotB];
         if (!FusionRules.Validate(Type, a, b, config.AllowMixedSuits, out string error))

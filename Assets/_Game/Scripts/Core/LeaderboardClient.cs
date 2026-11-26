@@ -14,7 +14,7 @@ public static class LeaderboardClient
 {
     private const string Url = "https://ujkwiczikyolhlhachlk.supabase.co";
     private const string Key = "sb_publishable_fGRiVmAvRI_qOyY2n5agfw_92gEte-4";
-    private const string Platform = "itch";
+    private static string Platform => Portal.PlatformId; // itch / gamepix / crazygames
     public const int Size = 10;
     private const int TimeoutSeconds = 8;
     private const string LocalKey = "dto_local_top";
@@ -40,6 +40,13 @@ public static class LeaderboardClient
     public static string Mode { get; private set; } = "normal";   // modo da lista carregada
 
     // Nome do modo como o servidor usa ("easy" | "normal" | "hardcore").
+    // Modo infinito: ranking próprio. Pontos = chefes vencidos × EndlessPerBoss + (99999 − segundos):
+    // mais chefes sempre ganha; com os mesmos chefes, quem foi mais rápido fica na frente.
+    // (o servidor recalcula do mesmo jeito em dto_submit_endless, ver Supabase/draw_the_odds_endless.sql)
+    public const string EndlessId = "endless";
+    public const int EndlessPerBoss = 100000;
+    public static int EndlessScore(int bossesBeaten, int timeSec) => bossesBeaten * EndlessPerBoss + Mathf.Max(0, 99999 - timeSec);
+
     public static string ModeId(Difficulty d) => d == Difficulty.Easy ? "easy" : d == Difficulty.Hardcore ? "hardcore" : "normal";
     public static bool Online { get; private set; }
 
@@ -63,6 +70,14 @@ public static class LeaderboardClient
     public static IEnumerator FetchTop(string mode, Action onDone)
     {
         Mode = mode;
+        // Portal sem servidores externos (GamePix): só o top 10 salvo neste navegador.
+        if (!Portal.AllowExternalRequests)
+        {
+            Entries = LoadLocal(mode);
+            Online = false;
+            onDone?.Invoke();
+            yield break;
+        }
         string select = $"/rest/v1/dto_top?select=name,score,time_sec,cards_thrown,criticals,fusions,damage_taken,deaths&order=score.desc,created_at.asc&limit={Size}";
         string path = select + "&mode=eq." + mode;
         bool fallback = false;
@@ -110,6 +125,12 @@ public static class LeaderboardClient
         SavedName = nick;
         run.name = nick;
         AddLocal(run, mode);
+        if (!Portal.AllowExternalRequests)
+        {
+            yield return FetchTop(mode, null);
+            onDone?.Invoke(true, "");
+            yield break;
+        }
 
         var body = new StringBuilder();
         body.Append('{');
@@ -122,12 +143,14 @@ public static class LeaderboardClient
         body.Append("\"p_deaths\":").Append(run.deaths).Append(',');
         body.Append("\"p_platform\":\"").Append(Platform).Append('"');
         string oldBody = body.ToString() + "}";                         // sem o modo (função antiga)
-        body.Append(",\"p_mode\":\"").Append(mode).Append("\"}");
+        bool endless = mode == EndlessId;
+        if (endless) body.Append(",\"p_rounds\":").Append(run.score / EndlessPerBoss).Append('}');
+        else body.Append(",\"p_mode\":\"").Append(mode).Append("\"}");
 
         bool ok = false;
         string error = "", text = "";
         long code = 0;
-        yield return Post(body.ToString(), (o, c, t) => { ok = o; code = c; text = t; });
+        yield return Post(body.ToString(), (o, c, t) => { ok = o; code = c; text = t; }, endless ? "dto_submit_endless" : "dto_submit_run");
         // Servidor sem o SQL dos modos (função com p_mode não existe): o NORMAL ainda dá para enviar na antiga.
         if (!ok && code == 404 && mode == "normal") yield return Post(oldBody, (o, c, t) => { ok = o; code = c; text = t; });
         if (!ok)
@@ -139,9 +162,9 @@ public static class LeaderboardClient
         onDone?.Invoke(ok, error);
     }
 
-    private static IEnumerator Post(string json, Action<bool, long, string> onDone)
+    private static IEnumerator Post(string json, Action<bool, long, string> onDone, string function = "dto_submit_run")
     {
-        using (var req = new UnityWebRequest(Url + "/rest/v1/rpc/dto_submit_run", "POST"))
+        using (var req = new UnityWebRequest(Url + "/rest/v1/rpc/" + function, "POST"))
         {
             req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
             req.downloadHandler = new DownloadHandlerBuffer();

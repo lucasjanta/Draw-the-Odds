@@ -9,6 +9,7 @@ public class PlayerHUD : MonoBehaviour
     private TextMeshProUGUI dashText;
     private TextMeshProUGUI hpText, redrawText, handText;
     private float ghostValue = 1f, fillValue = 1f;
+    private bool touchLabels;
 
     public static PlayerHUD Create(Transform parent, GameManager gm)
     {
@@ -27,10 +28,12 @@ public class PlayerHUD : MonoBehaviour
         hud.hpText.rectTransform.Stretch();
 
         hud.redrawText = UIFactory.Text("Redraw", panel.transform, "", 9f, new Color(0.85f, 0.85f, 1f));
-        hud.redrawText.rectTransform.Place(new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(8f, 18f), new Vector2(100f, 14f));
+        hud.redrawText.rectTransform.Place(new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(8f, 18f), new Vector2(104f, 14f)); // o "MÃO 7/10" fica à direita
+        FitText(hud.redrawText); // "[R] NUOVA MANO ●●●" é bem mais comprido que "[R] REDRAW ●●●"
 
-        hud.dashText = UIFactory.Text("Dash", panel.transform, "[SHIFT] DASH", 9f, new Color(0.85f, 0.85f, 1f));
-        hud.dashText.rectTransform.Place(new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(8f, 4f), new Vector2(80f, 14f));
+        hud.dashText = UIFactory.Text("Dash", panel.transform, DashLabel(false), 9f, new Color(0.85f, 0.85f, 1f));
+        hud.dashText.rectTransform.Place(new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(8f, 4f), new Vector2(70f, 14f));
+        FitText(hud.dashText); // a barra do dash começa logo depois
         UIFactory.Bar(panel.transform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(82f, 8f), new Vector2(86f, 6f),
             new Color32(0x73, 0xD8, 0xFF, 0xFF), out hud.dashFill, out var dashGhost);
         dashGhost.gameObject.SetActive(false);
@@ -43,9 +46,31 @@ public class PlayerHUD : MonoBehaviour
         gm.Hand.OnCardAdded += _ => hud.RefreshTexts();
         gm.Hand.OnCardRemoved += (_, __) => hud.RefreshTexts();
         hud.HandleHealth(gm.PlayerHealth.Current, gm.PlayerHealth.Max);
+        KeyBindings.OnChanged += hud.HandleKeysChanged;
         hud.RefreshTexts();
         return hud;
     }
+
+    private void OnDestroy() => KeyBindings.OnChanged -= HandleKeysChanged;
+
+    // Texto que diminui sozinho se não couber (idiomas com palavras compridas, teclas como "ESPACIO").
+    private static void FitText(TMPro.TextMeshProUGUI t)
+    {
+        t.enableAutoSizing = true;
+        t.fontSizeMax = t.fontSize;
+        t.fontSizeMin = 5f;
+        t.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+    }
+
+    // Trocou uma tecla nas Opções: atualiza "[R] REDRAW" e "[SHIFT] DASH".
+    private void HandleKeysChanged()
+    {
+        if (this == null) return;
+        dashText.text = DashLabel(VirtualInput.Active);
+        RefreshTexts();
+    }
+
+    private static string DashLabel(bool touch) => touch ? "DASH" : $"[{KeyBindings.Name(GameKey.Dash)}] DASH";
 
     private void HandleHealth(int current, int max)
     {
@@ -60,7 +85,7 @@ public class PlayerHUD : MonoBehaviour
         string pips = "";
         for (int i = 0; i < gm.Config.RedrawsPerBoss; i++)
             pips += i < gm.RedrawsLeft ? "<color=#FFD447>●</color>" : "<color=#555577>●</color>";
-        redrawText.text = $"[R] REDRAW {pips}";
+        redrawText.text = (VirtualInput.Active ? "REDRAW " : $"[{KeyBindings.Name(GameKey.Redraw)}] REDRAW ") + pips; // no toque não há tecla
         handText.text = $"HAND {gm.Hand.Count}/{gm.Hand.MaxSize}";
     }
 
@@ -72,5 +97,12 @@ public class PlayerHUD : MonoBehaviour
         float dash = gm.Player.DashCooldown01;
         UIFactory.SetBar(dashFill, dash);
         dashText.color = dash >= 1f ? Color.white : new Color(0.6f, 0.6f, 0.75f);
+        bool touch = VirtualInput.Active;
+        if (touch != touchLabels)
+        {
+            touchLabels = touch;
+            dashText.text = DashLabel(touch);
+            RefreshTexts();
+        }
     }
 }

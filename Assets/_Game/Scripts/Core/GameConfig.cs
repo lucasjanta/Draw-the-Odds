@@ -38,6 +38,10 @@ public class GameConfig : ScriptableObject
     [SerializeField] private float cardSpeed = 22f;
     [SerializeField] private float cardHomingDegreesPerSecond = 55f;
     [SerializeField] private float cardHomingConeDegrees = 30f; // só corrige se a carta já vai mais ou menos na direção do chefe
+    [Tooltip("Controles de toque: o homing gira esta quantidade de vezes mais rápido")]
+    [SerializeField] private float touchHomingMultiplier = 2f;
+    [Tooltip("Controles de toque: cone (graus) em que a carta ainda corrige a rota até o chefe")]
+    [SerializeField] private float touchHomingConeDegrees = 45f;
 
     [Header("Pickups de carta")]
     [SerializeField] private int lowHandThreshold = 7;     // abaixo/igual disto surgem pacotes de carta
@@ -218,6 +222,8 @@ public class GameConfig : ScriptableObject
     public float CardSpeed => cardSpeed;
     public float CardHomingDegreesPerSecond => cardHomingDegreesPerSecond;
     public float CardHomingConeDegrees => cardHomingConeDegrees;
+    public float TouchHomingMultiplier => touchHomingMultiplier;
+    public float TouchHomingConeDegrees => touchHomingConeDegrees;
     public int LowHandThreshold => lowHandThreshold;
     public int MinPackSize => minPackSize;
     public int MaxPackSize => maxPackSize;

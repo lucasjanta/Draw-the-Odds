@@ -97,6 +97,9 @@ public class CardView : MonoBehaviour
 
     public void SetSelected(bool selected) => outline.enabled = selected;
 
+    // Cartas da mão recebem toque/clique (para arrastar); as do painel da fusão não.
+    public void SetTouchable(bool touchable) => face.raycastTarget = touchable;
+
     public void SetTag(string text, Color color)
     {
         bool show = !string.IsNullOrEmpty(text);

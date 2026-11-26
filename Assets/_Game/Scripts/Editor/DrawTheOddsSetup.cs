@@ -184,6 +184,12 @@ public static class DrawTheOddsSetup
     [MenuItem("Draw the Odds/Build WebGL")]
     public static string BuildWebGL()
     {
+        // Com a chave da GamePix ligada, a build levaria o SDK deles junto: no itch não pode.
+        if (PortalBuild.AnyPortalActive)
+        {
+            Debug.LogError("[Build WebGL] A portal SDK is ON. Use Draw the Odds/Portal/itch (no SDK) first.");
+            return "Portal SDK is ON: use Draw the Odds/Portal/itch (no SDK) first";
+        }
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
         PlayerSettings.WebGL.decompressionFallback = true;
         var options = new BuildPlayerOptions

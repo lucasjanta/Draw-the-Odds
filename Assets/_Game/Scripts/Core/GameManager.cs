@@ -25,8 +25,45 @@ public class GameManager : MonoBehaviour
     // (e sem escolher a dificuldade de novo).
     private static bool skipTitle;
 
-    // Dificuldade escolhida depois do tutorial (static: continua valendo no "tentar de novo").
-    public static Difficulty SelectedDifficulty { get; set; } = Difficulty.Normal;
+    // Dificuldade (botão ao lado do JOGAR ou tela depois do tutorial). Fica salva no navegador.
+    private const string DifficultyKey = "dto_diff";
+    public static Difficulty SelectedDifficulty
+    {
+        get => (Difficulty)PlayerPrefs.GetInt(DifficultyKey, (int)Difficulty.Normal);
+        set { PlayerPrefs.SetInt(DifficultyKey, (int)value); PlayerPrefs.Save(); }
+    }
+
+    // ===================== Modo infinito =====================
+    // Liberado ao derrotar a Dama (2º chefe) pela primeira vez. static: vale no "recomeçar".
+    private const string EndlessUnlockKey = "dto_endless";
+    public static bool EndlessUnlocked
+    {
+        get => PlayerPrefs.GetInt(EndlessUnlockKey, 0) == 1;
+        private set { PlayerPrefs.SetInt(EndlessUnlockKey, value ? 1 : 0); PlayerPrefs.Save(); }
+    }
+    public static bool EndlessMode { get; private set; }
+    public int EndlessRound { get; private set; }               // 1, 2, 3...
+    public int EndlessBeaten => Mathf.Max(0, EndlessRound - 1); // chefes vencidos (pontuação)
+    public EndlessRule CurrentRule { get; private set; }
+    private static EndlessRule lastRule;
+
+    // ===================== Continuar (anúncio recompensado) =====================
+    // Ao morrer, o jogador pode ver um anúncio e recomeçar DESTE chefe (1 vez por chefe/rodada).
+    // A cena é recarregada; estas informações atravessam o recarregamento.
+    private class Carry
+    {
+        public bool endless;
+        public int stage;           // índice do chefe (história) ou rodada (infinito)
+        public EndlessRule rule;
+        public int hp, redraws;
+        public RunStats stats;
+    }
+    private static Carry carry;
+    private static int continuedStage = int.MinValue;   // StageKey onde o "continuar" já foi usado
+    private int StageKey => EndlessMode ? 1000 + EndlessRound : BossIndex;
+    public bool CanContinue => Portal.RewardedAvailable && continuedStage != StageKey && !IsTutorial;
+    private int stageStartHp, stageStartRedraws;           // como o chefe atual começou (o "continuar" volta assim)
+    private int pendingHp = -1, pendingRedraws = -1;      // aplicados no PrepareFight depois de um "continuar"
     // Tutorial sempre no NORMAL (a escolha só acontece no fim dele).
     public DifficultySettings CurrentDifficulty => config.GetDifficulty(IsTutorial ? Difficulty.Normal : SelectedDifficulty);
 
@@ -74,6 +111,12 @@ public class GameManager : MonoBehaviour
     private void Awake()
     {
         Instance = this;
+        // Portal (CrazyGames etc.): inicia o SDK. Quando ele responder, aplica o idioma do jogador
+        // (só se ele nunca escolheu um nas Opções).
+        Portal.Init();
+        Portal.OnReady -= ApplyPortalLanguage;
+        Portal.OnReady += ApplyPortalLanguage;
+        if (Portal.Ready) ApplyPortalLanguage();
         GameTime.Reset(); // ao recarregar a cena, garante que nada ficou pausado/lento
         AudioManager.SetLevels(config.SfxGains, config.SfxMakeupDb); // equalização dos sons
 
@@ -115,10 +158,27 @@ public class GameManager : MonoBehaviour
         Fusion.WindowProvider = () => CurrentDifficulty.FusionWindow;
         Fusion.PreviewProvider = () => CurrentDifficulty.FusionPreview;
 
-        if (skipTitle)
+        // Dicas curtas (só fora do tutorial e uma vez cada)
+        Fusion.OnStarted += () => ui.Tips.Request("fusion");
+        Hand.OnCardRemoved += (_, __) => { if (State == GameState.Playing && Hand.Count <= 2 && RedrawsLeft > 0) ui.Tips.Request("redraw"); };
+
+        if (carry != null)
+        {
+            // Viu o anúncio: volta para o mesmo chefe/rodada, com a vida e os redraws do começo dele.
+            var c = carry;
+            carry = null;
+            skipTitle = false;
+            Stats = c.stats;
+            Stats.startTime = Time.time;
+            pendingHp = c.hp;
+            pendingRedraws = c.redraws;
+            if (c.endless) { lastRule = c.rule; StartCoroutine(BeginEndlessRound(c.stage, true, c.rule)); }
+            else StartCoroutine(BeginBoss(c.stage, true));
+        }
+        else if (skipTitle)
         {
             skipTitle = false;
-            StartCoroutine(BeginBoss(0));
+            StartCoroutine(EndlessMode ? BeginEndlessRound(1) : BeginBoss(0));
         }
         else
         {
@@ -132,6 +192,13 @@ public class GameManager : MonoBehaviour
         }
     }
 
+    private static void ApplyPortalLanguage()
+    {
+        var lang = Portal.PreferredLanguage;
+        if (lang.HasValue) Loc.ApplyDefault(lang.Value);
+        VirtualInput.NotifyChanged(); // o portal pode ter dito que é celular (liga os controles de toque)
+    }
+
     private void OnDestroy()
     {
         if (Instance == this) Instance = null;
@@ -139,15 +206,22 @@ public class GameManager : MonoBehaviour
 
     private void Update()
     {
-        if (!GameTime.Paused) Fusion.Tick(); // o relógio da fusão para junto com a pausa
-        player.InputFrozen = Fusion.Active || InputLocked || GameTime.Paused; // tempo parado = personagem parado
+        // Portal (GamePix etc.) pausou: anúncio na tela ou aba escondida. Nada anda e nenhuma tecla vale.
+        bool portalPause = Portal.PausedByPortal;
+        if (!GameTime.Paused && !portalPause) Fusion.Tick(); // o relógio da fusão para junto com a pausa
+        player.InputFrozen = Fusion.Active || InputLocked || GameTime.Paused || portalPause; // tempo parado = personagem parado
+        if (portalPause || leaving) return;
 
         var mouse = Mouse.current;
         var keyboard = Keyboard.current;
         bool click = mouse != null && mouse.leftButton.wasPressedThisFrame;
-        bool enter = keyboard != null && keyboard.enterKey.wasPressedThisFrame;
-        bool space = keyboard != null && keyboard.spaceKey.wasPressedThisFrame;
-        bool pauseKey = keyboard != null && (keyboard.escapeKey.wasPressedThisFrame || keyboard.pKey.wasPressedThisFrame);
+        // Enquanto o jogador escolhe uma tecla nova (Opções → CONTROLS), o teclado é só da tela de teclas.
+        bool keysFree = keyboard != null && !KeyBindings.Busy;
+        bool enter = keysFree && keyboard.enterKey.wasPressedThisFrame;
+        bool space = keysFree && keyboard.spaceKey.wasPressedThisFrame;
+        bool pauseKey = keysFree && (keyboard.escapeKey.wasPressedThisFrame || KeyBindings.Pressed(GameKey.Pause));
+
+        if (DevKeys && keyboard != null) HandleDevKeys(keyboard);
 
         switch (State)
         {
@@ -156,7 +230,8 @@ public class GameManager : MonoBehaviour
                 if (pauseKey) TogglePause();
                 break;
             case GameState.GameOver:
-                if ((click || enter || space) && Time.unscaledTime >= acceptClickTime) Reload();
+                // Os botões da tela (CONTINUAR / RECOMEÇAR / MENU) fazem tudo; Enter/Espaço = recomeçar.
+                if ((enter || space) && Time.unscaledTime >= acceptClickTime && !ui.GameOverBoardOpen) RestartRun();
                 break;
             // Vitória: a tela do ranking tem botões (e campo de nome), então clique solto não recarrega.
         }
@@ -167,13 +242,31 @@ public class GameManager : MonoBehaviour
     public void StartGame(bool withTutorial)
     {
         if (State != GameState.Title) return;
+        EndlessMode = false;
         if (withTutorial) StartCoroutine(BeginTutorial());
         else StartCoroutine(ChooseDifficultyThenStart(false));
+    }
+
+    // JOGAR: direto no Valete, com a dificuldade escolhida no menu e dicas curtas na tela.
+    public void StartRun()
+    {
+        if (State != GameState.Title) return;
+        EndlessMode = false;
+        StartCoroutine(BeginBoss(0));
+    }
+
+    // INFINITO: chefes em sequência, cada rodada mais forte (liberado depois de vencer a Dama).
+    public void StartEndless()
+    {
+        if (State != GameState.Title || !EndlessUnlocked) return;
+        EndlessMode = true;
+        StartCoroutine(BeginEndlessRound(1));
     }
 
     // Tela de dificuldade (depois do tutorial ou no Skip Tutorial) e então o 1º chefe.
     private IEnumerator ChooseDifficultyThenStart(bool afterTutorial)
     {
+        EndlessMode = false;
         State = GameState.Transition;
         ui.ShowTitle(false);
         player.ControlsEnabled = false;
@@ -185,12 +278,26 @@ public class GameManager : MonoBehaviour
         yield return BeginBoss(0);
     }
 
-    // ESC/P: abre ou fecha a pausa. Com as opções abertas, ESC volta para o menu de pausa.
+    // ESC/P (P = tecla configurável): abre ou fecha a pausa. Com as opções abertas, volta para o menu de pausa.
     private void TogglePause()
     {
         if (!GameTime.Paused) { GameTime.SetPaused(true); ui.Pause.Open(); }
         else if (ui.Pause.OptionsOpen) ui.Pause.ShowOptions(false);
         else ResumeGame();
+    }
+
+    // Botão "II" dos controles de toque.
+    public void TogglePauseFromButton()
+    {
+        if (State == GameState.Playing || State == GameState.Transition) TogglePause();
+    }
+
+    // Celular: o app saiu da tela (botão Home, ligação, notificação aberta). Abre a pausa para o jogador
+    // não voltar e encontrar o personagem já morto. (No PC/web perder o foco não pausa: segue como antes.)
+    private void OnApplicationPause(bool paused)
+    {
+        if (!paused || !Application.isMobilePlatform || GameTime.Paused) return;
+        if (State == GameState.Playing || State == GameState.Transition) TogglePause();
     }
 
     public void ResumeGame()
@@ -209,6 +316,69 @@ public class GameManager : MonoBehaviour
     public void BackToMainMenu()
     {
         skipTitle = false;
+        carry = null;
+        EndlessMode = false;
+        // Saindo do fim da run (vitória ou derrota) é uma pausa natural: pode ter anúncio.
+        // Saindo pelo menu de pausa no meio da luta: sem anúncio.
+        // (CrazyGames: nunca em botão de navegação, então lá o menu volta sem anúncio.)
+        bool endOfRun = State == GameState.Victory || State == GameState.GameOver;
+        if (endOfRun && Portal.AdsOnNavigation) StartCoroutine(ReloadAfterAd());
+        else Reload();
+    }
+
+    // RECOMEÇAR (derrota): run nova do Valete (ou rodada 1 do infinito), com anúncio entre as runs.
+    public void RestartRun()
+    {
+        if (State != GameState.GameOver) return;
+        skipTitle = true;
+        StartCoroutine(ReloadAfterAd());
+    }
+
+    // CONTINUAR (derrota): anúncio recompensado → volta para este chefe/rodada.
+    public void ContinueWithAd()
+    {
+        if (State != GameState.GameOver || !CanContinue || leaving) return;
+        StartCoroutine(ContinueRoutine());
+    }
+
+    private IEnumerator ContinueRoutine()
+    {
+        leaving = true;
+        bool ok = false;
+        yield return Portal.Rewarded(result => ok = result);
+        if (!ok)
+        {
+            // Sem anúncio (falhou, adblock, desistiu): sem recompensa, o botão some.
+            leaving = false;
+            continuedStage = StageKey;
+            ui.RefreshGameOverButtons();
+            yield break;
+        }
+        continuedStage = StageKey;
+        Stats.elapsedBefore = Stats.Elapsed;
+        Stats.deaths++;
+        carry = new Carry
+        {
+            endless = EndlessMode,
+            stage = EndlessMode ? EndlessRound : BossIndex,
+            rule = CurrentRule,
+            hp = Mathf.Max(stageStartHp, Mathf.CeilToInt(config.PlayerMaxHp / 2f)),
+            redraws = stageStartRedraws,
+            stats = Stats,
+        };
+        skipTitle = false;
+        Reload();
+    }
+
+    // Fim de run (derrota → tentar de novo, vitória → menu): anúncio do portal e então recarrega.
+    // "leaving" impede cliques repetidos de pedirem vários anúncios.
+    private bool leaving;
+
+    private IEnumerator ReloadAfterAd()
+    {
+        if (leaving) yield break;
+        leaving = true;
+        yield return Portal.Interstitial();
         Reload();
     }
 
@@ -220,7 +390,8 @@ public class GameManager : MonoBehaviour
     }
 
     // Prepara a fase (limpa tudo, reposiciona o player, mão inicial). Usado por chefes e tutorial.
-    private IEnumerator PrepareFight(BossData data, int index, IEnumerable<Card> startingHand = null)
+    // refill = começo de run (vida e redraws cheios). "continuar" usa pendingHp/pendingRedraws.
+    private IEnumerator PrepareFight(BossData data, int index, bool refill, IEnumerable<Card> startingHand = null)
     {
         State = GameState.Transition;
         BossIndex = index;
@@ -239,10 +410,12 @@ public class GameManager : MonoBehaviour
         PlayerHealth.cannotDie = index < 0;
         // A vida só enche no começo da run (tutorial ou 1º chefe): derrotar um chefe NÃO cura.
         // Morreu = run nova, do 1º chefe (vida e redraws cheios de novo).
-        if (index <= 0) PlayerHealth.SetMax(config.PlayerMaxHp, true);
+        if (refill) PlayerHealth.SetMax(config.PlayerMaxHp, true);
 
         // Redraws valem para a RUN inteira: só enchem no começo (tutorial ou 1º chefe).
-        if (index <= 0) RedrawsLeft = config.RedrawsPerBoss;
+        if (refill) RedrawsLeft = config.RedrawsPerBoss;
+        if (pendingHp > 0) { PlayerHealth.SetCurrent(pendingHp); pendingHp = -1; }
+        if (pendingRedraws >= 0) { RedrawsLeft = pendingRedraws; pendingRedraws = -1; }
         OnRedrawsChanged?.Invoke();
 
         if (startingHand != null)
@@ -257,15 +430,80 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    private IEnumerator BeginBoss(int index)
+    private IEnumerator BeginBoss(int index, bool resumed = false)
     {
+        EndlessMode = false;
+        // Primeira run de quem pulou o tutorial: a abertura da história antes do Valete.
+        if (index == 0 && !resumed && !StoryLines.Seen(StoryLines.Intro))
+        {
+            State = GameState.Transition;
+            ui.ShowTitle(false);
+            yield return PlayStory(StoryLines.Intro);
+        }
         var data = config.Bosses[index];
         // Começo de uma run nova (1º chefe): zera as estatísticas (o tutorial não conta).
-        if (index == 0) Stats = new RunStats { startTime = Time.time };
+        if (index == 0 && !resumed) { Stats = new RunStats { startTime = Time.time }; continuedStage = int.MinValue; }
         CurrentBossSuit = SuitInfo.Random(); // cada vez que um chefe surge, o naipe é sorteado
         ui.ShowBanner($"BOSS {index + 1}/{config.Bosses.Count}", BossTitle(data), 2.2f);
         PlayBossMusic(data);
-        yield return PrepareFight(data, index);
+        yield return PrepareFight(data, index, index <= 0 && !resumed);
+        stageStartHp = PlayerHealth.Current;
+        stageStartRedraws = RedrawsLeft;
+        yield return new WaitForSeconds(0.6f);
+
+        SpawnBoss(data);
+        yield return new WaitForSeconds(1.4f);
+        if (!resumed) yield return PlayStory(StoryLines.BossIntro(index)); // o chefe se apresenta (1ª vez)
+        PlayerHealth.forcedInvulnerable = false;
+        State = GameState.Playing;
+        Pickups.PowersEnabled = Pickups.CardsEnabled = true;
+        Pickups.Begin();
+        if (index == 0 && !resumed) StartCoroutine(OpeningTips());
+    }
+
+    // Dicas do começo (quem não fez o tutorial). Cada uma só aparece se ainda não foi vista.
+    private IEnumerator OpeningTips()
+    {
+        ui.Tips.Request("move");
+        ui.Tips.Request("throw");
+        yield return new WaitForSeconds(9f);
+        ui.Tips.Request("orb");
+        yield return new WaitForSeconds(18f);
+        ui.Tips.Request("suits");
+    }
+
+    // ===================== Modo infinito =====================
+    // Rodada n: Valete → Dama → Rei → Valete... cada vez mais forte (BossData.ForEndless).
+    // A partir da rodada 4, uma "regra da casa" sorteada. Entre rodadas: +2 de vida; a cada 3, +1 redraw.
+    private IEnumerator BeginEndlessRound(int round, bool resumed = false, EndlessRule resumedRule = EndlessRule.None)
+    {
+        EndlessMode = true;
+        EndlessRound = round;
+        int template = (round - 1) % config.Bosses.Count;
+        CurrentRule = resumed ? resumedRule : round >= 4 ? PickRule() : EndlessRule.None;
+        var data = config.Bosses[template].ForEndless(round, CurrentRule);
+        bool fresh = round == 1 && !resumed;
+        if (fresh) { Stats = new RunStats { startTime = Time.time }; continuedStage = int.MinValue; }
+
+        CurrentBossSuit = SuitInfo.Random();
+        string sub = Loc.Pick($"ENDLESS - ROUND {round}", $"INFINITO - RODADA {round}", $"INFINITO - RONDA {round}",
+                              $"INFINI - MANCHE {round}", $"ENDLOS - RUNDE {round}", $"INFINITO - ROUND {round}");
+        if (CurrentRule != EndlessRule.None) sub += "  ·  " + RuleName(CurrentRule);
+        ui.ShowBanner(sub, BossTitle(data), CurrentRule != EndlessRule.None ? 2.8f : 2.2f);
+        PlayBossMusic(data);
+        yield return PrepareFight(data, template, fresh);
+
+        if (round > 1 && !resumed)
+        {
+            PlayerHealth.Heal(2);
+            if ((round - 1) % 3 == 0 && RedrawsLeft < config.RedrawsPerBoss)
+            {
+                RedrawsLeft++;
+                OnRedrawsChanged?.Invoke();
+            }
+        }
+        stageStartHp = PlayerHealth.Current;
+        stageStartRedraws = RedrawsLeft;
         yield return new WaitForSeconds(0.6f);
 
         SpawnBoss(data);
@@ -276,9 +514,41 @@ public class GameManager : MonoBehaviour
         Pickups.Begin();
     }
 
+    private static EndlessRule PickRule()
+    {
+        EndlessRule rule;
+        do rule = (EndlessRule)UnityEngine.Random.Range(1, 6);
+        while (rule == lastRule);
+        lastRule = rule;
+        return rule;
+    }
+
+    public static string RuleName(EndlessRule rule)
+    {
+        switch (rule)
+        {
+            case EndlessRule.Shuffle: return Loc.Pick("SHUFFLE: THE NUMBER KEEPS CHANGING", "EMBARALHA: O NÚMERO VIVE MUDANDO",
+                "BARAJA: EL NÚMERO NO PARA DE CAMBIAR", "MÉLANGE : LE NOMBRE CHANGE SANS CESSE", "GEMISCHT: DIE ZAHL ÄNDERT SICH STÄNDIG", "MESCOLA: IL NUMERO CAMBIA DI CONTINUO");
+            case EndlessRule.LoadedDice: return Loc.Pick("LOADED DICE", "DADOS VICIADOS", "DADOS TRUCADOS", "DÉS PIPÉS", "GEZINKTE WÜRFEL", "DADI TRUCCATI");
+            case EndlessRule.DoubleTrouble: return Loc.Pick("DOUBLE TROUBLE", "ATAQUE EM DOBRO", "DOBLE ATAQUE", "DOUBLE ATTAQUE", "DOPPELTER ÄRGER", "DOPPIO ATTACCO");
+            case EndlessRule.WideOpen: return Loc.Pick("WIDE OPEN: 1 TO 26", "TUDO OU NADA: 1 A 26", "TODO O NADA: 1 A 26",
+                "QUITTE OU DOUBLE : 1 À 26", "ALLES ODER NICHTS: 1 BIS 26", "TUTTO O NIENTE: DA 1 A 26");
+            case EndlessRule.ThickSkin: return Loc.Pick("THICK SKIN: +30% HP", "COURO GROSSO: +30% DE VIDA", "PIEL GRUESA: +30% DE VIDA",
+                "PEAU ÉPAISSE : +30% PV", "DICKE HAUT: +30% LP", "PELLE DURA: +30% VITA");
+        }
+        return "";
+    }
+
     // Tutorial: mão com números baixos (o Ás esconde 1–8) e o TutorialDirector conduz o resto.
     private IEnumerator BeginTutorial()
     {
+        // Abertura da história (só na primeira vez)
+        if (!StoryLines.Seen(StoryLines.Intro))
+        {
+            State = GameState.Transition;
+            ui.ShowTitle(false);
+            yield return PlayStory(StoryLines.Intro);
+        }
         ui.ShowBanner("TUTORIAL", config.TutorialBoss.DisplayName, 1.6f);
         AudioManager.Music(config.MenuMusicIntro, config.MenuMusic); // tutorial continua com a música do menu
         var hand = new[]
@@ -286,7 +556,7 @@ public class GameManager : MonoBehaviour
             new Card(Suit.Clubs, 2), new Card(Suit.Spades, 7), new Card(Suit.Hearts, 4),
             new Card(Suit.Diamonds, 5), new Card(Suit.Clubs, 1), new Card(Suit.Spades, 3), new Card(Suit.Hearts, 8),
         };
-        yield return PrepareFight(config.TutorialBoss, -1, hand);
+        yield return PrepareFight(config.TutorialBoss, -1, true, hand);
         PlayerHealth.forcedInvulnerable = false;
         State = GameState.Playing;
         Pickups.PowersEnabled = Pickups.CardsEnabled = false;
@@ -300,6 +570,7 @@ public class GameManager : MonoBehaviour
     {
         if (tutorial != null) Destroy(tutorial);
         ui.HidePrompt();
+        ui.Story.Hide(); // o diálogo do Coringa pode estar aberto
         InputLocked = false;
         FusionController.SetTimeScale(1f);
         Fusion.Cancel();
@@ -308,6 +579,37 @@ public class GameManager : MonoBehaviour
         if (Boss != null) Destroy(Boss.gameObject);
         StartCoroutine(ChooseDifficultyThenStart(true));
     }
+
+    // ===================== História =====================
+    // Mostra uma cena da história (StoryLines). Cada cena aparece só na primeira vez, e nunca no infinito.
+    // O tempo fica parado durante o diálogo (o relógio da run usa Time.time, então não conta) e
+    // o input volta ao estado anterior depois.
+    public IEnumerator PlayStory(string id, bool force = false)
+    {
+        if (!force && (EndlessMode || StoryLines.Seen(id))) yield break;
+        var lines = StoryLines.Get(id);
+        if (lines == null) yield break;
+        StoryLines.MarkSeen(id); // marca já: pular ou fechar o jogo no meio também conta como visto
+        bool wasLocked = InputLocked;
+        InputLocked = true;
+        FusionController.SetTimeScale(0f);
+        yield return ui.Story.Play(lines);
+        FusionController.SetTimeScale(1f);
+        yield return null; // o clique que fechou o diálogo não vira arremesso
+        InputLocked = wasLocked;
+    }
+
+    // Debug (ponte do Editor): call GameManager.DebugStory boss1_intro
+    public static string DebugStory(string id)
+    {
+        if (Instance == null) return "no game";
+        if (StoryLines.Get(id) == null) return "unknown id";
+        Instance.StartCoroutine(Instance.PlayStory(id, true));
+        return "story " + id;
+    }
+
+    public static string DebugStoryNext() { Instance.ui.Story.RequestNext(); return "next"; }
+    public static string DebugStorySkip() { Instance.ui.Story.RequestSkip(); return "skip"; }
 
     // Música do chefe, respeitando a opção de trilha do menu de pausa.
     private void PlayBossMusic(BossData data)
@@ -359,6 +661,7 @@ public class GameManager : MonoBehaviour
         else AudioManager.Sfx(config.SfxMiss, 0.8f); // acertou longe do número: som próprio de "sem dano"
         if (!r.isCritical) PlayCloseness(r.distance);
         if (r.isCritical) Stats.criticals++;
+        ui.Tips.Request(r.isCritical ? "crit" : "hint");
         if (r.bonusCards > 0)
         {
             var bonus = new List<Card>();
@@ -373,6 +676,7 @@ public class GameManager : MonoBehaviour
         State = GameState.Transition;
         PlayerHealth.forcedInvulnerable = true;
         AudioManager.Sfx(config.SfxBossDefeated, 1f, 0f);
+        if (!IsTutorial) Portal.HappyMoment();
         Fusion.Cancel();
         Pickups.StopAndClear();
         StartCoroutine(AfterBossDefeated());
@@ -386,32 +690,54 @@ public class GameManager : MonoBehaviour
         if (IsTutorial)
         {
             if (tutorial != null) Destroy(tutorial);
+            QuickTips.MarkAllSeen(); // fez o tutorial completo: as dicas curtas não precisam aparecer
             ui.HidePrompt();
             InputLocked = false;
+            yield return PlayStory(StoryLines.TutorialOutro);
             ui.ShowBanner("TUTORIAL COMPLETE", "GOOD LUCK!", 2f);
             yield return new WaitForSeconds(2.4f);
             StartCoroutine(ChooseDifficultyThenStart(true));
             yield break;
         }
 
-        ui.ShowBanner("DEFEATED", BossTitle(CurrentBossData) + " FOLDED!", 2f);
-        yield return new WaitForSeconds(2.4f);
+        // Última fala do chefe derrotado (1ª vez; nunca no infinito)
+        yield return PlayStory(StoryLines.BossDefeat(BossIndex));
 
-        if (BossIndex + 1 < config.Bosses.Count)
+        // Venceu a Dama pela primeira vez: libera o modo infinito.
+        bool unlockedNow = !EndlessMode && BossIndex >= 1 && !EndlessUnlocked;
+        if (unlockedNow) EndlessUnlocked = true;
+        string sub = unlockedNow ? Loc.Pick("ENDLESS MODE UNLOCKED!", "MODO INFINITO LIBERADO!", "¡MODO INFINITO DESBLOQUEADO!",
+                                            "MODE INFINI DÉBLOQUÉ !", "ENDLOSMODUS FREIGESCHALTET!", "MODALITÀ INFINITA SBLOCCATA!") : "DEFEATED";
+        ui.ShowBanner(sub, BossTitle(CurrentBossData) + " FOLDED!", unlockedNow ? 2.6f : 2f);
+        yield return new WaitForSeconds(unlockedNow ? 3f : 2.4f);
+
+        if (EndlessMode)
+        {
+            yield return ui.Curtain.Cover();
+            yield return Portal.Interstitial();
+            StartCoroutine(BeginEndlessRound(EndlessRound + 1));
+            yield return null;
+            yield return ui.Curtain.Reveal();
+        }
+        else if (BossIndex + 1 < config.Bosses.Count)
         {
             // Transição: cartas caem e cobrem a tela, a fase troca por baixo, e as cartas caem embora.
             yield return ui.Curtain.Cover();
+            // Tela coberta pelas cartas, entre um chefe e outro: momento certo para o anúncio do portal.
+            yield return Portal.Interstitial();
             StartCoroutine(BeginBoss(BossIndex + 1)); // monta a fase nova na hora (antes do 1º yield)
             yield return null;
             yield return ui.Curtain.Reveal();
         }
         else
         {
+            yield return PlayStory(StoryLines.Ending); // final da história (gancho para o Ás)
             State = GameState.Victory;
             player.ControlsEnabled = false;
             skipTitle = false;
             acceptClickTime = Time.unscaledTime + 1.5f;
             AudioManager.Sfx(config.SfxVictory, 1f, 0f);
+            Portal.HappyMoment(true); // vitória final: o momento mais raro
             AudioManager.Music(config.MenuMusicIntro, config.MenuMusic, 3f);
             ui.ShowVictory(Stats, Stats.Elapsed, SelectedDifficulty);
         }
@@ -421,6 +747,7 @@ public class GameManager : MonoBehaviour
     {
         State = GameState.GameOver;
         Fusion.Cancel();
+        Portal.SadMoment();
         skipTitle = true; // "tentar de novo" = run nova a partir do 1º chefe
         acceptClickTime = Time.unscaledTime + 1.5f;
         StartCoroutine(GameOverSequence());
@@ -431,7 +758,7 @@ public class GameManager : MonoBehaviour
         FusionController.SetTimeScale(0.3f);
         yield return new WaitForSecondsRealtime(1.2f);
         FusionController.SetTimeScale(1f);
-        ui.ShowGameOver(CurrentBossData.DisplayName);
+        ui.ShowGameOver(this);
     }
 
     private void Reload()
@@ -512,10 +839,11 @@ public class GameManager : MonoBehaviour
         return Instance.ui.Difficulty.DebugPick(Enum.TryParse(name, true, out Difficulty d) ? d : Difficulty.Normal);
     }
 
-    // Troca o idioma (testa a tradução): "toggle"
+    // Troca o idioma (testa a tradução): "next" ou o nome ("German", "Spanish"...)
     public static string DebugLang(string arg)
     {
-        Loc.Toggle();
+        if (Enum.TryParse(arg, true, out Language lang)) Loc.Current = lang;
+        else Loc.Next();
         return "lang " + Loc.Current;
     }
 
@@ -690,6 +1018,47 @@ public class GameManager : MonoBehaviour
         return $"state={gm.State} locked={gm.InputLocked} frozen={p.InputFrozen} controls={p.ControlsEnabled} " +
                $"fusion={gm.Fusion.Active} ts={Time.timeScale} pos={p.transform.position} move={p.MoveInput} " +
                $"kb={UnityEngine.InputSystem.Keyboard.current?.aKey.isPressed}";
+    }
+
+    // Atalhos de teste na build web: abrir a página com "?devkeys=1" no endereço.
+    // F1 = fusão (+)  F2 = morrer  F3 = libera o infinito  F4 = acerto crítico  F5 = pacote de cartas
+    // (Lido na primeira vez que é usado, no Update: o Unity não deixa ler a URL num inicializador estático.)
+    private static bool? devKeys;
+    private static bool DevKeys => devKeys ??= Application.absoluteURL != null && Application.absoluteURL.Contains("devkeys=1");
+
+    private void HandleDevKeys(Keyboard kb)
+    {
+        if (kb.f1Key.wasPressedThisFrame) Fusion.Begin(PowerType.Add); // slots vazios: testa arrastar as cartas
+        if (kb.f2Key.wasPressedThisFrame) DebugKillPlayer();
+        if (kb.f3Key.wasPressedThisFrame) { DebugUnlockEndless("on"); ui.ShowTitle(State == GameState.Title); }
+        if (kb.f4Key.wasPressedThisFrame) DebugCrit();
+        if (kb.f5Key.wasPressedThisFrame) DebugPack();
+    }
+
+    // Debug: libera o infinito ("on") ou bloqueia de novo ("off").
+    public static string DebugUnlockEndless(string arg)
+    {
+        EndlessUnlocked = arg != "off";
+        return "endless unlocked " + EndlessUnlocked;
+    }
+
+    // Debug: começa o infinito numa rodada. Ex.: call GameManager.DebugEndless 4
+    public static string DebugEndless(string round)
+    {
+        if (Instance == null || Instance.State != GameState.Title) return "not in title";
+        Instance.StartCoroutine(Instance.BeginEndlessRound(Mathf.Max(1, int.Parse(round))));
+        return "endless " + round;
+    }
+
+    // Debug: botões da tela de derrota. "continue" | "restart" | "menu"
+    public static string DebugGameOver(string arg)
+    {
+        var gm = Instance;
+        if (gm == null || gm.State != GameState.GameOver) return "not game over (state " + gm?.State + ")";
+        if (arg == "continue") gm.ContinueWithAd();
+        else if (arg == "restart") gm.RestartRun();
+        else gm.BackToMainMenu();
+        return arg + " canContinue=" + gm.CanContinue;
     }
 
     public static string DebugBoss(string index)

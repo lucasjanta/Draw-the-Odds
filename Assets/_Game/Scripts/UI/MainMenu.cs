@@ -2,11 +2,16 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Menu principal: Play (com tutorial), Skip Tutorial, How to Play e Options.
+// Menu principal: Play (direto no Valete, com dicas curtas) + dificuldade, Tutorial, Endless (infinito,
+// liberado ao vencer a Dama), How to Play, Ranking e Options.
 // (WebGL no navegador não tem "Quit": fechar a aba já faz isso.)
 public class MainMenu : MonoBehaviour
 {
     private GameObject mainPanel, howToPlay;
+    private GameManager gm;
+    private Button endlessButton;
+    private TextMeshProUGUI endlessLabel, difficultyLabel;
+    private TextMeshProUGUI howToText;
     private OptionsPanel options;
     private LeaderboardPanel ranking;
     private RectTransform titleRect;
@@ -20,6 +25,7 @@ public class MainMenu : MonoBehaviour
         back.raycastTarget = true;
         back.rectTransform.Stretch();
         var menu = back.gameObject.AddComponent<MainMenu>();
+        menu.gm = gm;
 
         // Fundo animado: naipes pretos em diagonal, deslizando devagar (textura repetida + uvRect).
         menu.pattern = new GameObject("SuitPattern", typeof(RectTransform)).AddComponent<RawImage>();
@@ -49,18 +55,30 @@ public class MainMenu : MonoBehaviour
         sub.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -104f), new Vector2(600f, 16f));
 
         var size = new Vector2(180f, 26f);
-        menu.AddButton(main, "PLAY", -142f, size, () => gm.StartGame(true), 16f);
-        menu.AddButton(main, "SKIP TUTORIAL", -174f, size, () => gm.StartGame(false));
-        menu.AddButton(main, "HOW TO PLAY", -206f, size, () => menu.ShowPage(menu.howToPlay));
-        menu.AddButton(main, "RANKING", -238f, size, () => menu.ShowPage(menu.ranking.gameObject));
-        menu.AddButton(main, "OPTIONS", -270f, size, () => menu.ShowPage(menu.options.gameObject));
+        menu.AddButton(main, "PLAY", -134f, size, gm.StartRun, 16f);
+        // Dificuldade ao lado do JOGAR: ◄ NORMAL ► (clique troca; fica salva)
+        var diff = menu.AddButton(main, "", -134f, new Vector2(104f, 26f), menu.CycleDifficulty, 10f);
+        diff.GetComponent<RectTransform>().anchoredPosition = new Vector2(148f, -134f);
+        menu.difficultyLabel = diff.transform.Find("Label").GetComponent<TextMeshProUGUI>().NoLoc();
+        menu.AddButton(main, "TUTORIAL", -166f, size, () => gm.StartGame(true));
+        menu.endlessButton = menu.AddButton(main, "ENDLESS", -198f, size, gm.StartEndless);
+        menu.endlessLabel = menu.endlessButton.transform.Find("Label").GetComponent<TextMeshProUGUI>().NoLoc();
+        // Bloqueado: roxo escuro (o cinza claro padrão do Unity deixava o texto ilegível)
+        var colors = menu.endlessButton.colors;
+        colors.disabledColor = new Color32(0x2A, 0x22, 0x40, 0xFF);
+        menu.endlessButton.colors = colors;
+        menu.AddButton(main, "HOW TO PLAY", -230f, size, () => menu.ShowPage(menu.howToPlay));
+        menu.AddButton(main, "RANKING", -262f, size, () => menu.ShowPage(menu.ranking.gameObject));
+        menu.AddButton(main, "OPTIONS", -294f, size, () => menu.ShowPage(menu.options.gameObject));
+        Loc.OnChanged += () => { if (menu != null) menu.RefreshLabels(); };
+        KeyBindings.OnChanged += () => { if (menu != null) menu.RefreshLabels(); }; // teclas novas aparecem no COMO JOGAR
 
         var credit = UIFactory.Text("Credit", main, "Official 2026 Unity Game Jam  ·  theme: LUCKY NUMBER", 8f,
             new Color(1f, 1f, 1f, 0.4f), TextAlignmentOptions.Center);
         credit.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 8f), new Vector2(600f, 12f));
 
         // ---------- Subtelas ----------
-        menu.howToPlay = BuildHowToPlay(back.transform, () => menu.ShowPage(null));
+        menu.howToPlay = BuildHowToPlay(back.transform, () => menu.ShowPage(null), out menu.howToText);
         menu.options = OptionsPanel.Create(back.transform, () => menu.ShowPage(null));
         menu.ranking = LeaderboardPanel.Create(back.transform, "BACK", () => menu.ShowPage(null));
         menu.ShowPage(null);
@@ -68,10 +86,34 @@ public class MainMenu : MonoBehaviour
         return menu;
     }
 
-    private void AddButton(Transform parent, string label, float y, Vector2 size, System.Action onClick, float fontSize = 13f)
+    private Button AddButton(Transform parent, string label, float y, Vector2 size, System.Action onClick, float fontSize = 13f)
     {
         var b = UIFactory.Button(label, parent, label, size, onClick, fontSize);
         b.GetComponent<RectTransform>().Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, y), size);
+        return b;
+    }
+
+    private void CycleDifficulty()
+    {
+        GameManager.SelectedDifficulty = (Difficulty)(((int)GameManager.SelectedDifficulty + 1) % 3);
+        RefreshLabels();
+    }
+
+    // Textos que mudam: dificuldade escolhida e se o infinito já foi liberado.
+    private void RefreshLabels()
+    {
+        var d = GameManager.SelectedDifficulty;
+        string color = d == Difficulty.Easy ? "#3CC86E" : d == Difficulty.Hardcore ? "#E84A5F" : "#FFD447";
+        string name = Loc.T(d == Difficulty.Easy ? "EASY" : d == Difficulty.Hardcore ? "HARDCORE" : "NORMAL");
+        difficultyLabel.text = $"◄ <color={color}>{name}</color> ►";
+
+        bool unlocked = GameManager.EndlessUnlocked;
+        endlessButton.interactable = unlocked;
+        endlessLabel.text = unlocked ? Loc.T("ENDLESS")
+                                     : "<size=9>" + Loc.Pick("ENDLESS - BEAT THE QUEEN", "INFINITO - VENÇA A DAMA", "INFINITO - VENCE A LA REINA",
+                                                             "INFINI - BATS LA DAME", "ENDLOS - BESIEGE DIE DAME", "INFINITO - BATTI LA REGINA") + "</size>";
+        endlessLabel.alpha = unlocked ? 1f : 0.45f;
+        if (howToText != null) howToText.text = HowToPlayText();
     }
 
     // Mostra uma subtela (ou volta para a principal com null).
@@ -95,6 +137,7 @@ public class MainMenu : MonoBehaviour
     // Título pulsando devagar (escala) com um balanço leve.
     private void Update()
     {
+        HandleBackButton();
         if (titleRect == null) return;
         float t = Time.unscaledTime;
 
@@ -111,10 +154,20 @@ public class MainMenu : MonoBehaviour
         titleRect.localRotation = Quaternion.Euler(0f, 0f, 1.2f * Mathf.Sin(t * 1.3f));
     }
 
+    // Botão VOLTAR do Android (chega como a tecla Esc) e Esc no PC:
+    // numa subpágina (como jogar, ranking, opções) volta para o menu; no menu principal do Android fecha o jogo.
+    private void HandleBackButton()
+    {
+        var keyboard = UnityEngine.InputSystem.Keyboard.current;
+        if (keyboard == null || KeyBindings.Busy || !keyboard.escapeKey.wasPressedThisFrame) return;
+        if (!mainPanel.activeSelf) ShowPage(null);
+        else if (Application.platform == RuntimePlatform.Android) Application.Quit();
+    }
+
     public void Show(bool show)
     {
         gameObject.SetActive(show);
-        if (show) { transform.SetAsLastSibling(); ShowPage(null); }
+        if (show) { transform.SetAsLastSibling(); ShowPage(null); RefreshLabels(); }
     }
 
     // Textura do padrão: 4×4 células, cada uma com um naipe pixel art 9×9. O naipe depende de
@@ -155,27 +208,60 @@ public class MainMenu : MonoBehaviour
         string Y(string k) => $"<color=#FFD447>{k}</color>";
         string C(Suit s) => SuitInfo.Colored(SuitInfo.Symbol(s), s);
         string ops = "<color=#3CC86E>+</color> <color=#E84A5F>−</color> <color=#FFD447>×</color>";
-        if (Loc.IsPt)
-            return
-                $"{Y("A/D")} anda  {Y("ESPAÇO")} pula  {Y("S+ESPAÇO")} desce  {Y("SHIFT")} dash\n" +
-                $"{Y("RODINHA")} escolhe  {Y("CLIQUE")} arremessa  {Y("R")} nova mão  {Y("ESC")} pausa\n\n" +
-                "Descubra o <color=#FFD447>NÚMERO SECRETO</color> de cada chefe.\n" +
-                "<color=#FF8A3D>▲ MAIOR</color> / <color=#5A9BFF>▼ MENOR</color>  mais perto = mais dano\n" +
-                "<color=#FFD447>EXATO = CRÍTICO</color>, depois um número novo\n\n" +
-                $"{C(Suit.Clubs)} normal   {C(Suit.Spades)} x1.5   {C(Suit.Hearts)} cura   {C(Suit.Diamonds)} +1 carta\n\n" +
-                $"Orbes {ops} param o tempo: {Y("Q/E")} coloca, {Y("CLIQUE")} funde";
-        return
-            $"{Y("A/D")} move  {Y("SPACE")} jump  {Y("S+SPACE")} drop  {Y("SHIFT")} dash\n" +
-            $"{Y("SCROLL")} pick card  {Y("CLICK")} throw  {Y("R")} redraw  {Y("ESC")} pause\n\n" +
-            "Find each boss's <color=#FFD447>SECRET NUMBER</color>.\n" +
-            "<color=#FF8A3D>▲ HIGHER</color> / <color=#5A9BFF>▼ LOWER</color>  closer = more damage\n" +
-            "<color=#FFD447>EXACT = CRITICAL</color>, then a new number\n\n" +
-            $"{C(Suit.Clubs)} normal   {C(Suit.Spades)} x1.5   {C(Suit.Hearts)} heal   {C(Suit.Diamonds)} +1 card\n\n" +
-            $"Orbs {ops} stop time: {Y("Q/E")} place, {Y("CLICK")} merge";
+        // Controles de toque: as 2 primeiras linhas falam do joystick e dos botões.
+        bool touch = VirtualInput.Active;
+        string N(GameKey k) => KeyBindings.Name(k); // teclas configuradas (Opções → CONTROLS)
+        string W(string en, string pt, string es, string fr, string de, string it) => Loc.Pick(en, pt, es, fr, de, it);
+
+        // Palavras dos controles
+        string move = W("move", "anda", "mover", "bouger", "laufen", "muoviti");
+        string jump = W("jump", "pula", "saltar", "sauter", "springen", "salta");
+        string drop = W("drop", "desce", "bajar", "descendre", "runter", "scendi");
+        string dash = W("dash", "dash", "dash", "dash", "Dash", "dash");
+        string pickCard = W("pick card", "escolhe a carta", "elegir carta", "choisir", "Karte wählen", "scegli carta");
+        string throwIt = W("throw", "arremessa", "lanzar", "lancer", "werfen", "lancia");
+        string redraw = W("new hand", "nova mão", "nueva mano", "nouvelle main", "neue Hand", "nuova mano");
+        string pause = W("pause", "pausa", "pausa", "pause", "Pause", "pausa");
+
+        string controls = touch
+            ? $"{Y("JOYSTICK")} {move}  {Y("▲")} {jump}  {Y(W("DOWN", "BAIXO", "ABAJO", "BAS", "RUNTER", "GIÙ") + " + ▲")} {drop}  {Y("»")} {dash}\n" +
+              $"{Y(W("TAP", "TOQUE", "TOCA", "TOUCHE", "TIPPEN", "TOCCA"))} {pickCard}  {Y(W("DRAG UP", "ARRASTE P/ CIMA", "ARRASTRA ARRIBA", "GLISSE EN HAUT", "HOCHZIEHEN", "TRASCINA SU"))} {throwIt}\n" +
+              $"{Y(W("CARD BUTTON", "BOTÃO DA CARTA", "BOTÓN CARTA", "BOUTON CARTE", "KARTENKNOPF", "PULSANTE CARTA"))} {redraw}  {Y("II")} {pause}\n\n"
+            : $"{Y(N(GameKey.Left) + "/" + N(GameKey.Right))} {move}  {Y(N(GameKey.Jump))} {jump}  {Y(N(GameKey.Down) + "+" + N(GameKey.Jump))} {drop}  {Y(N(GameKey.Dash))} {dash}\n" +
+              $"{Y(W("SCROLL", "RODINHA", "RUEDA", "MOLETTE", "MAUSRAD", "ROTELLA"))} {pickCard}  {Y(W("CLICK", "CLIQUE", "CLIC", "CLIC", "KLICK", "CLIC"))} {throwIt}  " +
+              $"{Y(N(GameKey.Redraw))} {redraw}  {Y(N(GameKey.Pause) + "/ESC")} {pause}\n\n";
+
+        string rules = W(
+            "Find each boss's <color=#FFD447>SECRET NUMBER</color>.\n<color=#FF8A3D>▲ HIGHER</color> / <color=#5A9BFF>▼ LOWER</color>  closer = more damage\n<color=#FFD447>EXACT = CRITICAL</color>, then a new number",
+            "Descubra o <color=#FFD447>NÚMERO SECRETO</color> de cada chefe.\n<color=#FF8A3D>▲ MAIOR</color> / <color=#5A9BFF>▼ MENOR</color>  mais perto = mais dano\n<color=#FFD447>EXATO = CRÍTICO</color>, depois um número novo",
+            "Descubre el <color=#FFD447>NÚMERO SECRETO</color> de cada jefe.\n<color=#FF8A3D>▲ MAYOR</color> / <color=#5A9BFF>▼ MENOR</color>  más cerca = más daño\n<color=#FFD447>EXACTO = CRÍTICO</color>, luego un número nuevo",
+            "Trouve le <color=#FFD447>NOMBRE SECRET</color> de chaque boss.\n<color=#FF8A3D>▲ PLUS</color> / <color=#5A9BFF>▼ MOINS</color>  plus près = plus de dégâts\n<color=#FFD447>EXACT = CRITIQUE</color>, puis un nouveau nombre",
+            "Finde die <color=#FFD447>GEHEIME ZAHL</color> jedes Bosses.\n<color=#FF8A3D>▲ HÖHER</color> / <color=#5A9BFF>▼ TIEFER</color>  näher = mehr Schaden\n<color=#FFD447>GENAU = KRITISCH</color>, dann eine neue Zahl",
+            "Trova il <color=#FFD447>NUMERO SEGRETO</color> di ogni boss.\n<color=#FF8A3D>▲ PIÙ ALTO</color> / <color=#5A9BFF>▼ PIÙ BASSO</color>  più vicino = più danni\n<color=#FFD447>ESATTO = CRITICO</color>, poi un nuovo numero");
+
+        string suits = $"{C(Suit.Clubs)} normal   {C(Suit.Spades)} x1.5   {C(Suit.Hearts)} " +
+                       W("heal", "cura", "cura", "soin", "Heilung", "cura") + $"   {C(Suit.Diamonds)} +1 " +
+                       W("card", "carta", "carta", "carte", "Karte", "carta");
+
+        string orbs = touch
+            ? W($"Orbs {ops} stop time: {Y("DRAG")} 2 cards to the slots, {Y("MERGE")}",
+                $"Orbes {ops} param o tempo: {Y("ARRASTE")} 2 cartas aos espaços, {Y("JUNTAR")}",
+                $"Los orbes {ops} paran el tiempo: {Y("ARRASTRA")} 2 cartas a los huecos, {Y("FUSIONAR")}",
+                $"Les orbes {ops} arrêtent le temps : {Y("GLISSE")} 2 cartes, {Y("FUSIONNER")}",
+                $"Orbs {ops} stoppen die Zeit: {Y("ZIEH")} 2 Karten in die Plätze, {Y("FUSION")}",
+                $"Le sfere {ops} fermano il tempo: {Y("TRASCINA")} 2 carte negli slot, {Y("FONDI")}")
+            : W($"Orbs {ops} stop time: {Y(N(GameKey.SlotA) + "/" + N(GameKey.SlotB))} place, {Y("CLICK")} merge",
+                $"Orbes {ops} param o tempo: {Y(N(GameKey.SlotA) + "/" + N(GameKey.SlotB))} coloca, {Y("CLIQUE")} funde",
+                $"Los orbes {ops} paran el tiempo: {Y(N(GameKey.SlotA) + "/" + N(GameKey.SlotB))} coloca, {Y("CLIC")} fusiona",
+                $"Les orbes {ops} arrêtent le temps : {Y(N(GameKey.SlotA) + "/" + N(GameKey.SlotB))} placer, {Y("CLIC")} fusionner",
+                $"Orbs {ops} stoppen die Zeit: {Y(N(GameKey.SlotA) + "/" + N(GameKey.SlotB))} ablegen, {Y("KLICK")} verschmelzen",
+                $"Le sfere {ops} fermano il tempo: {Y(N(GameKey.SlotA) + "/" + N(GameKey.SlotB))} metti, {Y("CLIC")} fondi");
+
+        return controls + rules + "\n\n" + suits + "\n\n" + orbs;
     }
 
     // O texto de regras que antes ficava na tela de título.
-    private static GameObject BuildHowToPlay(Transform parent, System.Action onBack)
+    private static GameObject BuildHowToPlay(Transform parent, System.Action onBack, out TextMeshProUGUI bodyText)
     {
         var panel = UIFactory.MenuPanel("HowToPlay", parent, new Vector2(620f, 340f));
 
@@ -187,6 +273,7 @@ public class MainMenu : MonoBehaviour
         Loc.OnChanged += () => { if (text != null) text.text = HowToPlayText(); }; // trocou o idioma: remonta
         text.lineSpacing = 4f;
         text.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -44f), new Vector2(600f, 240f));
+        bodyText = text;
 
         var back = UIFactory.Button("Back", panel.transform, "BACK", new Vector2(120f, 24f), onBack, 12f);
         back.GetComponent<RectTransform>().Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 12f), new Vector2(120f, 24f));

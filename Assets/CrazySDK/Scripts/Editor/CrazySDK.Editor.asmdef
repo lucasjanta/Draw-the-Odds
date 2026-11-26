@@ -1,0 +1,21 @@
+{
+    "name": "CrazySDK.Editor",
+    "references": [
+        "CrazySDK",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "defineConstraints": [
+        "DTO_CRAZY"
+    ],
+    "rootNamespace": "CrazyGames",
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "versionDefines": [],
+    "noEngineReferences": false
+}

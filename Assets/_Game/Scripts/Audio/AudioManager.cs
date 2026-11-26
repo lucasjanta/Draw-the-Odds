@@ -233,6 +233,17 @@ public class AudioManager : MonoBehaviour
         music.volume = intro.volume = 1f;
         if (loopClip == null) yield break;
 
+#if DTO_GAMEPIX
+        if (introClip != null)
+        {
+            // GamePix: o plugin troca o sistema de som da Unity pelo dele, que carrega os sons depois.
+            // Na hora de agendar, a duração da intro ainda é 0 → o loop começava JUNTO com a intro
+            // (a música parecia tocar duas vezes). Aqui a intro toca e o loop só começa quando ela termina.
+            yield return PlayIntroThenLoop(introClip);
+            musicFade = null;
+            yield break;
+        }
+#endif
         if (introClip != null)
         {
             // Agenda a intro e o loop no relógio do áudio: o loop começa exatamente quando a intro acaba.
@@ -249,6 +260,31 @@ public class AudioManager : MonoBehaviour
             music.volume = 1f;
         }
         musicFade = null;
+    }
+
+    // Intro → loop sem PlayScheduled (build da GamePix). Espera a intro acabar de verdade; se o sistema de
+    // som não informar "tocando", usa a duração do clipe (quando ela finalmente aparecer) como segurança.
+    private IEnumerator PlayIntroThenLoop(AudioClip introClip)
+    {
+        loopStartDsp = 0;
+        intro.Play();
+        float start = Time.realtimeSinceStartup;
+        bool sawPlaying = false;
+        while (intro.clip == introClip)
+        {
+            // Anúncio / aba escondida: o portal pausa os sons; o relógio da intro também para.
+            if (Portal.PausedByPortal) { start += Time.unscaledDeltaTime; yield return null; continue; }
+            float elapsed = Time.realtimeSinceStartup - start;
+            float length = introClip.length; // 0 enquanto o som não carregou
+            if (intro.isPlaying) sawPlaying = true;
+            else if (sawPlaying) break;                               // a intro acabou
+            if (length > 0.05f && elapsed >= length + 0.3f) break;     // segurança pela duração
+            if (length <= 0.05f && !sawPlaying && elapsed > 6f) break; // nunca tocou: segue para o loop
+            yield return null;
+        }
+        if (intro.clip != introClip) yield break; // trocou de música no meio
+        intro.Stop();
+        music.Play();
     }
 
     // Segurança (navegadores): se o loop agendado não começou na hora, começa agora.

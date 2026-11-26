@@ -20,9 +20,13 @@ public class LeaderboardPanel : MonoBehaviour
     private Button submitButton;
     private LeaderboardClient.Entry run;     // run do jogador (null = só visualizar)
     private string highlightName;
-    private Difficulty mode = Difficulty.Normal;
-    private GameObject tabs;                 // abas EASY / NORMAL / HARDCORE (só no menu)
-    private readonly Button[] tabButtons = new Button[3];
+    // Aba/modo: 0 EASY, 1 NORMAL, 2 HARDCORE (= Difficulty), 3 ENDLESS (modo infinito).
+    private const int EndlessTab = 3;
+    private int mode = (int)Difficulty.Normal;
+    private bool IsEndless => mode == EndlessTab;
+    private string ModeId => IsEndless ? LeaderboardClient.EndlessId : LeaderboardClient.ModeId((Difficulty)mode);
+    private GameObject tabs;                 // abas EASY / NORMAL / HARDCORE / ENDLESS (só no menu)
+    private readonly Button[] tabButtons = new Button[4];
 
     public static LeaderboardPanel Create(Transform parent, string closeLabel, Action onClose)
     {
@@ -46,14 +50,14 @@ public class LeaderboardPanel : MonoBehaviour
         p.submitButton.GetComponent<RectTransform>().Place(new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), Vector2.zero, new Vector2(100f, 18f));
 
         // Abas de modo (só aparecem no menu; na vitória o ranking é o do modo jogado)
-        var tabRow = UIFactory.Rect("Tabs", t).Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -30f), new Vector2(330f, 18f));
+        var tabRow = UIFactory.Rect("Tabs", t).Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -30f), new Vector2(402f, 18f));
         p.tabs = tabRow.gameObject;
-        string[] tabNames = { "EASY", "NORMAL", "HARDCORE" };
-        for (int i = 0; i < 3; i++)
+        string[] tabNames = { "EASY", "NORMAL", "HARDCORE", "ENDLESS" };
+        for (int i = 0; i < 4; i++)
         {
-            var d = (Difficulty)i;
-            var b = UIFactory.Button("Tab" + i, tabRow, tabNames[i], new Vector2(104f, 18f), () => p.SwitchMode(d), 9f);
-            b.GetComponent<RectTransform>().Place(new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(i * 113f, 0f), new Vector2(104f, 18f));
+            int tab = i;
+            var b = UIFactory.Button("Tab" + i, tabRow, tabNames[i], new Vector2(96f, 18f), () => p.SwitchMode(tab), 9f);
+            b.GetComponent<RectTransform>().Place(new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(i * 102f, 0f), new Vector2(96f, 18f));
             p.tabButtons[i] = b;
         }
 
@@ -108,7 +112,12 @@ public class LeaderboardPanel : MonoBehaviour
     }
 
     // run = null: só mostra o ranking (com abas de modo). mode = qual ranking mostrar/enviar.
-    public void Show(LeaderboardClient.Entry playerRun, Difficulty mode = Difficulty.Normal)
+    public void Show(LeaderboardClient.Entry playerRun, Difficulty mode = Difficulty.Normal) => Open(playerRun, (int)mode);
+
+    // Fim de uma partida do modo infinito (pontos = chefes vencidos; o tempo desempata).
+    public void ShowEndless(LeaderboardClient.Entry playerRun) => Open(playerRun, EndlessTab);
+
+    private void Open(LeaderboardClient.Entry playerRun, int mode)
     {
         run = playerRun;
         this.mode = mode;
@@ -118,24 +127,22 @@ public class LeaderboardPanel : MonoBehaviour
         gameObject.SetActive(true);
         transform.SetAsLastSibling();
         nameRow.SetActive(false);
-        runLine.text = run == null ? "" : Loc.Pick(
-            $"YOUR RUN   <color=#FFD447>SCORE {run.score}</color>   TIME {FormatTime(run.time_sec)}   CARDS {run.cards_thrown}   " +
-            $"CRITS {run.criticals}   FUSIONS {run.fusions}   DMG {run.damage_taken}   DEATHS {run.deaths}",
-            $"SUA PARTIDA   <color=#FFD447>PONTOS {run.score}</color>   TEMPO {FormatTime(run.time_sec)}   CARTAS {run.cards_thrown}   " +
-            $"CRÍT. {run.criticals}   FUSÕES {run.fusions}   DANO {run.damage_taken}   MORTES {run.deaths}");
+        runLine.text = run == null ? "" : RunLine(run);
         status.text = "LOADING...";
         title.text = "TOP 10";
         FillRows();
-        StartCoroutine(LeaderboardClient.FetchTop(LeaderboardClient.ModeId(mode), AfterFetch));
+        cells[0, 2].text = IsEndless ? "BOSSES" : "SCORE";
+        StartCoroutine(LeaderboardClient.FetchTop(ModeId, AfterFetch));
     }
 
-    private void SwitchMode(Difficulty d)
+    private void SwitchMode(int tab)
     {
-        if (run != null || d == mode) return;
-        mode = d;
+        if (run != null || tab == mode) return;
+        mode = tab;
         RefreshTabs();
         status.text = "LOADING...";
-        StartCoroutine(LeaderboardClient.FetchTop(LeaderboardClient.ModeId(mode), AfterFetch));
+        cells[0, 2].text = IsEndless ? "BOSSES" : "SCORE";
+        StartCoroutine(LeaderboardClient.FetchTop(ModeId, AfterFetch));
     }
 
     // Aba do modo atual fica dourada (as outras normais).
@@ -144,18 +151,23 @@ public class LeaderboardPanel : MonoBehaviour
         for (int i = 0; i < tabButtons.Length; i++)
         {
             var label = tabButtons[i].transform.Find("Label").GetComponent<TextMeshProUGUI>();
-            label.color = i == (int)mode ? Highlight : new Color(1f, 1f, 1f, 0.55f);
+            label.color = i == mode ? Highlight : new Color(1f, 1f, 1f, 0.55f);
         }
     }
 
-    private string ModeTitle => mode == Difficulty.Easy ? "EASY" : mode == Difficulty.Hardcore ? "HARDCORE" : "NORMAL";
+    // Título da lista: GLOBAL (servidor), LOCAL (OFFLINE) (servidor fora do ar) ou só LOCAL
+    // (portal que não permite servidores externos, ex.: GamePix: o ranking é só deste navegador).
+    private string ListTitle => (LeaderboardClient.Online ? "TOP 10 - GLOBAL"
+        : Portal.AllowExternalRequests ? "TOP 10 - LOCAL (OFFLINE)" : "TOP 10 - LOCAL") + " - " + ModeTitle;
+
+    private string ModeTitle => IsEndless ? "ENDLESS" : mode == (int)Difficulty.Easy ? "EASY" : mode == (int)Difficulty.Hardcore ? "HARDCORE" : "NORMAL";
 
     public void Hide() => gameObject.SetActive(false);
 
     private void AfterFetch()
     {
-        if (LeaderboardClient.Mode != LeaderboardClient.ModeId(mode)) return; // resposta de outra aba (atrasada)
-        title.text = (LeaderboardClient.Online ? "TOP 10 - GLOBAL" : "TOP 10 - LOCAL (OFFLINE)") + " - " + ModeTitle;
+        if (LeaderboardClient.Mode != ModeId) return; // resposta de outra aba (atrasada)
+        title.text = ListTitle;
         FillRows();
         if (run == null) { status.text = LeaderboardClient.Entries.Count == 0 ? "NO RUNS YET. BE THE FIRST!" : ""; return; }
 
@@ -163,7 +175,11 @@ public class LeaderboardPanel : MonoBehaviour
         if (rank > 0)
         {
             status.text = Loc.Pick($"<color=#FFD447>YOU MADE THE TOP 10 (#{rank})!</color> TYPE YOUR NAME AND PRESS SUBMIT.",
-                $"<color=#FFD447>VOCÊ ENTROU NO TOP 10 (#{rank})!</color> DIGITE SEU NOME E APERTE ENVIAR.");
+                $"<color=#FFD447>VOCÊ ENTROU NO TOP 10 (#{rank})!</color> DIGITE SEU NOME E APERTE ENVIAR.",
+                $"<color=#FFD447>¡ENTRASTE EN EL TOP 10 (#{rank})!</color> ESCRIBE TU NOMBRE Y PULSA ENVIAR.",
+                $"<color=#FFD447>TU ES DANS LE TOP 10 (#{rank}) !</color> TAPE TON NOM ET APPUIE SUR ENVOYER.",
+                $"<color=#FFD447>DU BIST IN DEN TOP 10 (#{rank})!</color> NAMEN EINGEBEN UND SENDEN DRÜCKEN.",
+                $"<color=#FFD447>SEI NELLA TOP 10 (#{rank})!</color> SCRIVI IL TUO NOME E PREMI INVIA.");
             nameRow.SetActive(true);
             submitButton.interactable = true;
             nameInput.text = LeaderboardClient.SavedName;
@@ -179,13 +195,13 @@ public class LeaderboardPanel : MonoBehaviour
         if (!LeaderboardClient.IsNameOk(nick)) { status.text = "<color=#FF5A5A>INVALID NAME (2-14 LETTERS/NUMBERS)</color>"; return; }
         submitButton.interactable = false;
         status.text = "SENDING...";
-        StartCoroutine(LeaderboardClient.Submit(nick, run, LeaderboardClient.ModeId(mode), (ok, error) =>
+        StartCoroutine(LeaderboardClient.Submit(nick, run, ModeId, (ok, error) =>
         {
             highlightName = nick;
             nameRow.SetActive(!ok && error == "INVALID NAME");
             submitButton.interactable = true;
             status.text = ok ? "<color=#3CC86E>SAVED!</color>" : $"<color=#FF5A5A>{error}</color>";
-            title.text = (LeaderboardClient.Online ? "TOP 10 - GLOBAL" : "TOP 10 - LOCAL (OFFLINE)") + " - " + ModeTitle;
+            title.text = ListTitle;
             FillRows();
         }));
     }
@@ -200,7 +216,8 @@ public class LeaderboardPanel : MonoBehaviour
                 ? new[] { r.ToString(), "-", "", "", "", "", "", "", "" }
                 : new[]
                 {
-                    r.ToString(), e.name, e.score.ToString(), FormatTime(e.time_sec), e.cards_thrown.ToString(),
+                    r.ToString(), e.name, IsEndless ? (e.score / LeaderboardClient.EndlessPerBoss).ToString() : e.score.ToString(),
+                    FormatTime(e.time_sec), e.cards_thrown.ToString(),
                     e.criticals.ToString(), e.fusions.ToString(), e.damage_taken.ToString(), e.deaths.ToString(),
                 };
             bool mine = e != null && !string.IsNullOrEmpty(highlightName) &&
@@ -214,4 +231,16 @@ public class LeaderboardPanel : MonoBehaviour
     }
 
     public static string FormatTime(int seconds) => $"{seconds / 60}:{seconds % 60:00}";
+
+    // "SUA PARTIDA  PONTOS 1234  TEMPO 3:21 ..." no idioma atual (palavras vêm do dicionário do Loc).
+    private string RunLine(LeaderboardClient.Entry r)
+    {
+        string W(string en) => Loc.T(en);
+        string head = IsEndless
+            ? $"<color=#FFD447>{W("BOSSES")} {r.score / LeaderboardClient.EndlessPerBoss}</color>"
+            : $"<color=#FFD447>{W("SCORE")} {r.score}</color>";
+        string line = $"{W("YOUR RUN")}   {head}   {W("TIME")} {FormatTime(r.time_sec)}   {W("CARDS")} {r.cards_thrown}   {W("CRITS")} {r.criticals}";
+        if (!IsEndless) line += $"   {W("FUSES")} {r.fusions}   {W("DMG")} {r.damage_taken}   {W("DEATHS")} {r.deaths}";
+        return line;
+    }
 }
