@@ -137,3 +137,14 @@ crashlytics-build.properties
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# ===== Draw the Odds: arquivos locais / gerados que não vão para o repositório =====
+# Grafo do código (graphify): gerado de novo a cada atualização
+graphify-out/
+# Saída de build (Burst/WebGL) que o Unity grava fora de Builds/
+/[Dd]ata/
+# Configurações pessoais de editor e de ferramentas
+.vscode/
+.claude/
+# Pastas de build em minúsculas/variações
+/[Bb]uild*/
