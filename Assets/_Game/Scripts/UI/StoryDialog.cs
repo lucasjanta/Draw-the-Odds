@@ -17,6 +17,8 @@ public class StoryDialog : MonoBehaviour
     private CanvasGroup group;
     private TextMeshProUGUI nameText, bodyText, arrow;
     private Image nameTag;
+    private Image portrait;          // retrato (carta) de quem fala, em cima da caixa à esquerda
+    private string shownPortrait = "";
     private bool skipRequested;
 
     public bool Showing { get; private set; }
@@ -45,9 +47,15 @@ public class StoryDialog : MonoBehaviour
         var box = UIFactory.MenuPanel("Box", root, new Vector2(BoxWidth, 72f));
         box.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 44f), new Vector2(BoxWidth, 72f));
 
+        // Retrato: a carta de quem fala (Coringa, Valete, Dama, Rei, Ás), "pendurada" em cima da caixa
+        portrait = UIFactory.Image("Portrait", root, Color.white);
+        portrait.preserveAspect = true;
+        portrait.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(-BoxWidth / 2f + 40f, 108f), new Vector2(58f, 80f));
+        portrait.gameObject.SetActive(false);
+
         // Etiqueta com o nome de quem fala, "pendurada" no canto de cima da caixa
         nameTag = UIFactory.Image("NameTag", box.transform, UIFactory.OutlineColor);
-        nameTag.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 0f), new Vector2(12f, -4f), new Vector2(90f, 16f));
+        nameTag.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 0f), new Vector2(76f, -4f), new Vector2(90f, 16f)); // à direita do retrato
         var tagFace = UIFactory.Image("Face", nameTag.transform, new Color(UIFactory.PanelColor.r, UIFactory.PanelColor.g, UIFactory.PanelColor.b, 1f));
         tagFace.rectTransform.Stretch(2f);
         nameText = UIFactory.Text("Name", nameTag.transform, "", 9f, Color.white, TextAlignmentOptions.Center).NoLoc();
@@ -68,8 +76,8 @@ public class StoryDialog : MonoBehaviour
         arrow.gameObject.AddComponent<Blink>();
 
         // PULAR (canto superior direito): encerra a cena
-        var skip = UIFactory.Button("Skip", root, "SKIP", new Vector2(64f, 20f), () => skipRequested = true, 9f);
-        skip.GetComponent<RectTransform>().Place(new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-8f, -8f), new Vector2(64f, 20f));
+        var skip = UIFactory.Button("Skip", box.transform, "SKIP", new Vector2(64f, 18f), () => skipRequested = true, 9f);
+        skip.GetComponent<RectTransform>().Place(new Vector2(1f, 1f), new Vector2(1f, 0f), new Vector2(-8f, 2f), new Vector2(64f, 18f));
     }
 
     // Mostra as falas em sequência e termina quando o jogador passa da última (ou pula).
@@ -108,6 +116,7 @@ public class StoryDialog : MonoBehaviour
         }
 
         AudioManager.Ui(config.SfxUiClick);
+        shownPortrait = "";
         yield return Fade(0f, 0.2f);
         group.blocksRaycasts = false;
         Showing = false;
@@ -126,6 +135,7 @@ public class StoryDialog : MonoBehaviour
     {
         bool narrator = string.IsNullOrEmpty(line.speaker);
         nameTag.gameObject.SetActive(!narrator);
+        ShowPortrait(line.portrait);
         if (!narrator)
         {
             nameText.text = line.speaker;
@@ -138,6 +148,48 @@ public class StoryDialog : MonoBehaviour
         bodyText.fontStyle = narrator ? FontStyles.Italic : FontStyles.Normal;
         bodyText.text = line.text;
         bodyText.maxVisibleCharacters = 0;
+    }
+
+    // Sprite do retrato pela chave da fala (o naipe dos nobres é o do chefe atual).
+    private Sprite PortraitSprite(string key)
+    {
+        if (string.IsNullOrEmpty(key) || config == null) return null;
+        var gm = GameManager.Instance;
+        Suit suit = gm != null ? gm.CurrentBossSuit : Suit.Spades;
+        switch (key)
+        {
+            case "joker": return config.TutorialBoss.Sprite;
+            case "jack": return config.Bosses.Count > 0 ? config.Bosses[0].SpriteFor(suit) : null;
+            case "queen": return config.Bosses.Count > 1 ? config.Bosses[1].SpriteFor(suit) : null;
+            case "king": return config.Bosses.Count > 2 ? config.Bosses[2].SpriteFor(suit) : null;
+            case "ace": return config.SecretBoss.Sprite;
+        }
+        return null;
+    }
+
+    private void ShowPortrait(string key)
+    {
+        var sprite = PortraitSprite(key);
+        portrait.gameObject.SetActive(sprite != null);
+        if (sprite == null) { shownPortrait = ""; return; }
+        portrait.sprite = sprite;
+        if (key != shownPortrait) StartCoroutine(PortraitPop()); // quem fala mudou: a carta "pula"
+        shownPortrait = key;
+    }
+
+    private IEnumerator PortraitPop()
+    {
+        var rt = portrait.rectTransform;
+        for (float t = 0f; t < 0.22f; t += Time.unscaledDeltaTime)
+        {
+            float k = t / 0.22f;
+            float s = 1f + 0.25f * Mathf.Sin(k * Mathf.PI);
+            rt.localScale = new Vector3(s, s, 1f);
+            rt.localRotation = Quaternion.Euler(0f, 0f, 8f * (1f - k) * Mathf.Sin(k * 20f));
+            yield return null;
+        }
+        rt.localScale = Vector3.one;
+        rt.localRotation = Quaternion.identity;
     }
 
     // Debug (ponte do Editor): avança uma fala ou pula a cena sem precisar clicar no jogo.

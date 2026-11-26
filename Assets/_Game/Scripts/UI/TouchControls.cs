@@ -28,18 +28,22 @@ public class TouchControls : MonoBehaviour
         tc.tapLayer.transform.SetAsFirstSibling();
 
         var play = UIFactory.Rect("Play", tc.transform).Stretch();
+        SafeArea.Add(play); // botões fora do furo da câmera / cantos arredondados do celular
         tc.playLayer = play.gameObject;
         TouchJoystick.Create(play);
 
-        var jump = TouchButton.Create(play, "Jump", "▲", 58f, new Vector2(1f, 0f), new Vector2(-44f, 50f), JumpColor, 20f);
+        // Posições (px do Canvas, a partir do canto inferior direito). Entre um botão e outro sobra
+        // ~30 px de vão (antes eram ~10): o polegar não aperta dois ao mesmo tempo. O PULO fica a 29 px
+        // da borda para o dedo não escorregar para fora da tela.
+        var jump = TouchButton.Create(play, "Jump", "▲", 58f, new Vector2(1f, 0f), new Vector2(-58f, 58f), JumpColor, 20f);
         jump.OnDown += () => { VirtualInput.PressJump(); VirtualInput.JumpHeld = true; };
         jump.OnUp += () => VirtualInput.JumpHeld = false;
 
-        tc.dash = TouchButton.Create(play, "Dash", "»", 44f, new Vector2(1f, 0f), new Vector2(-104f, 36f), DashColor, 18f);
+        tc.dash = TouchButton.Create(play, "Dash", "»", 44f, new Vector2(1f, 0f), new Vector2(-138f, 42f), DashColor, 18f);
         tc.dash.OnDown += VirtualInput.PressDash;
 
         // Nova mão: carta (verso do baralho) com setas curvas; o número embaixo = trocas que restam.
-        tc.redraw = TouchButton.CreateCard(play, "Redraw", gm.Config.CardBack, PixelIcons.Redraw, 48f, new Vector2(1f, 0f), new Vector2(-44f, 116f));
+        tc.redraw = TouchButton.CreateCard(play, "Redraw", gm.Config.CardBack, PixelIcons.Redraw, 48f, new Vector2(1f, 0f), new Vector2(-58f, 142f));
         tc.redraw.OnDown += gm.Redraw;
 
         var pause = TouchButton.Create(play, "Pause", "II", 32f, new Vector2(0.5f, 1f), new Vector2(0f, -22f), MiscColor, 12f); // 32: dedo acerta fácil

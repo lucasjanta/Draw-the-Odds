@@ -50,6 +50,7 @@ public class PlayerCards : MonoBehaviour
             if (!overUi) ThrowAtScreen(mouse.position.ReadValue());
         }
         if (KeyBindings.Pressed(GameKey.Redraw)) gm.Redraw();
+        if (KeyBindings.Pressed(GameKey.Raise)) gm.TryRaise();
     }
 
     private void HandleSelection(GameManager gm, Mouse mouse, Keyboard keyboard)
@@ -89,7 +90,8 @@ public class PlayerCards : MonoBehaviour
         Vector2 dir = (Vector2)world - origin;
         if (dir.sqrMagnitude < 0.01f) dir = Vector2.up;
 
-        CardProjectile.Spawn(gm.Config, card, origin, dir, gm.Boss != null ? gm.Boss.transform : null);
+        int raise = gm.Raise.ConsumeArmed(); // RAISE armado vai junto com esta carta
+        CardProjectile.Spawn(gm.Config, card, origin, dir, gm.Boss != null ? gm.Boss.transform : null, raise);
         controller.FaceTowards(dir.x, 0.3f);
         controller.PlayOneShot("attack1", 0.25f);
         gm.Stats.cardsThrown++;

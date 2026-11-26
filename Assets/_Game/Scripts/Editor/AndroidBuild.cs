@@ -63,7 +63,9 @@ public static class AndroidBuild
         PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
         PlayerSettings.Android.minifyRelease = true;
         PlayerSettings.Android.forceInternetPermission = true; // ranking global (Supabase)
-        PlayerSettings.Android.renderOutsideSafeArea = false;  // nada fica embaixo do furo da câmera
+        // Desenha na tela INTEIRA, inclusive atrás do furo da câmera (desligado, o Android deixava uma
+        // faixa preta do lado do furo). Botões de toque e HUD respeitam Screen.safeArea (UI/SafeArea.cs).
+        PlayerSettings.Android.renderOutsideSafeArea = true;
         PlayerSettings.Android.startInFullscreen = true;
         PlayerSettings.Android.optimizedFramePacing = true;
         // Android 13+ (obrigatório no 16): sem isto o sistema "come" o botão Voltar e manda o jogo para o fundo.

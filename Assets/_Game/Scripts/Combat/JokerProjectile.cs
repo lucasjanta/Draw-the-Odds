@@ -7,7 +7,8 @@ public class JokerProjectile : MonoBehaviour
 {
     public const float Scale = 0.5f;      // 58×80 px → 1,8 × 2,5 unidades (girando, a meia escala não aparece)
     public const float Radius = 0.95f;    // colisor (um pouco menor que a carta: dano justo)
-    private const float ExitX = 24f;      // some depois de sair da tela (que vai de −20 a 20)
+    // Some depois de sair da tela (que vai de −Arena.HalfWidth a +Arena.HalfWidth; ±20 em 16:9).
+    private static float ExitX => Arena.HalfWidth + 4f;
 
     private Transform spin;
     private float spinSpeed;

@@ -346,7 +346,7 @@ public class TutorialDirector : MonoBehaviour
             if (!gm.Pickups.HasPowerOnMap)
             {
                 float side = player.transform.position.x > 0f ? -1f : 1f;
-                Vector2 orbPos = new Vector2(Mathf.Clamp(player.transform.position.x + side * 4f, -17f, 17f), LevelBuilder.FloorTop + 0.9f);
+                Vector2 orbPos = new Vector2(Mathf.Clamp(player.transform.position.x + side * 4f, -(Arena.HalfWidth - 3f), Arena.HalfWidth - 3f), LevelBuilder.FloorTop + 0.9f);
                 gm.Pickups.SpawnPowerAt(PowerType.Subtract, orbPos, 0f); // 0 = não some sozinho
             }
             Say(Loc.Pick("Grab the orb!", "Pegue o orbe!", "¡Coge el orbe!", "Prends l'orbe !", "Schnapp dir den Orb!", "Prendi la sfera!"));

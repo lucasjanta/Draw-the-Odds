@@ -54,10 +54,12 @@ public class LevelBuilder
         walls[1] = right != null ? right.transform : null;
     }
 
-    // Parede: o colisor (1 unidade de largura) fica com a borda de dentro em x = ±WallInner = na borda
-    // da tela (−20 a 20). O feltro fica TODO fora da tela: só aparece em telas mais largas que 16:9.
-    private const float WallInner = 20f;
+    // Parede: o colisor (1 unidade de largura) fica com a borda de dentro em x = ±Arena.HalfWidth = na
+    // borda da tela (−20 a 20 em 16:9; mais largo em celular 20:9). O feltro fica TODO fora da tela.
     private const float WallFeltWidth = 8f;
+
+    // Cores da última fase montada: o Refit() refaz chão/paredes/fundo quando a largura da tela muda.
+    private Color lastFeltColor = Color.white, lastPlatformColor = Color.white;
 
     public void Build(int layoutIndex, Color platformColor)
     {
@@ -68,25 +70,13 @@ public class LevelBuilder
         // Tom do feltro: um pouco mais claro que a cor do chefe (o feltro escurece com a borda e o pontilhado).
         // Chão, paredes e plataformas usam o MESMO tom.
         Color feltColor = Color.Lerp(platformColor, Color.white, 0.25f);
-        if (floor != null) floor.color = feltColor;
-        if (config.Felt != null && floor != null)
-        {
-            // Chão = um feltro grande do tamanho do chão (o quadrado original só fica com o colisor)
-            floor.enabled = false;
-            if (floorFelt == null)
-            {
-                floorFelt = Fx.MakeSprite("FloorFelt", config.Felt, Vector3.zero, Color.white, 1);
-                floorFelt.drawMode = SpriteDrawMode.Tiled;
-            }
-            // O sprite do chão é um quadrado de 1 unidade escalado: posição e escala dão o retângulo.
-            Vector3 c = floor.transform.position, size = floor.transform.lossyScale;
-            floorFelt.transform.position = new Vector3(c.x, c.y, 0f);
-            floorFelt.size = new Vector2(size.x, size.y);
-            floorFelt.color = feltColor;
-        }
+        lastFeltColor = feltColor;
+        lastPlatformColor = platformColor;
+        BuildFloor(feltColor);
         BuildWalls(feltColor);
         BuildBackground(platformColor);
-        surfaces.Add(new Surface { minX = -18f, maxX = 18f, top = FloorTop });
+        float hw = Arena.HalfWidth;
+        surfaces.Add(new Surface { minX = -hw + 2f, maxX = hw - 2f, top = FloorTop });
 
         var layout = Layouts[Mathf.Clamp(layoutIndex, 0, Layouts.Length - 1)];
         foreach (var p in layout)
@@ -126,6 +116,43 @@ public class LevelBuilder
         PlaceProps(layoutIndex);
     }
 
+    // A largura da tela mudou (Arena.OnChanged): reposiciona chão, paredes e fundo sem recriar a fase.
+    public void Refit()
+    {
+        BuildFloor(lastFeltColor);
+        BuildWalls(lastFeltColor);
+        BuildBackground(lastPlatformColor);
+        if (surfaces.Count > 0)
+        {
+            float hw = Arena.HalfWidth;
+            surfaces[0] = new Surface { minX = -hw + 2f, maxX = hw - 2f, top = FloorTop };
+        }
+    }
+
+    // Chão: o colisor (quadrado escalado da cena) vai de parede a parede, com 1 unidade de sobra de cada
+    // lado; o visual é um feltro grande do mesmo tamanho (o quadrado original só fica com o colisor).
+    private void BuildFloor(Color feltColor)
+    {
+        if (floor == null) return;
+        floor.color = feltColor;
+        Vector3 scale = floor.transform.localScale;
+        scale.x = Arena.HalfWidth * 2f + 2f;
+        floor.transform.localScale = scale;
+        floor.transform.position = new Vector3(0f, floor.transform.position.y, floor.transform.position.z);
+        if (config.Felt == null) return;
+        floor.enabled = false;
+        if (floorFelt == null)
+        {
+            floorFelt = Fx.MakeSprite("FloorFelt", config.Felt, Vector3.zero, Color.white, 1);
+            floorFelt.drawMode = SpriteDrawMode.Tiled;
+        }
+        // O sprite do chão é um quadrado de 1 unidade escalado: posição e escala dão o retângulo.
+        Vector3 c = floor.transform.position, size = floor.transform.lossyScale;
+        floorFelt.transform.position = new Vector3(c.x, c.y, 0f);
+        floorFelt.size = new Vector2(size.x, size.y);
+        floorFelt.color = feltColor;
+    }
+
     // Paredes laterais com o mesmo feltro do chão/plataformas. Vão do chão até acima da tela
     // (a ponta arredondada de cima fica escondida) e ficam atrás do chão.
     private void BuildWalls(Color feltColor)
@@ -137,7 +164,7 @@ public class LevelBuilder
             float side = i == 0 ? -1f : 1f;
             if (walls[i] != null)
             {
-                walls[i].position = new Vector3(side * (WallInner + 0.5f), walls[i].position.y, 0f);
+                walls[i].position = new Vector3(side * (Arena.HalfWidth + 0.5f), walls[i].position.y, 0f);
                 if (walls[i].TryGetComponent(out SpriteRenderer wsr)) wsr.enabled = false;
             }
             if (wallFelts[i] == null)
@@ -145,7 +172,7 @@ public class LevelBuilder
                 wallFelts[i] = Fx.MakeSprite(i == 0 ? "WallFeltLeft" : "WallFeltRight", config.Felt, Vector3.zero, Color.white, 0);
                 wallFelts[i].drawMode = SpriteDrawMode.Tiled;
             }
-            wallFelts[i].transform.position = new Vector3(side * (WallInner + WallFeltWidth / 2f), (bottom + top) / 2f, 0f);
+            wallFelts[i].transform.position = new Vector3(side * (Arena.HalfWidth + WallFeltWidth / 2f), (bottom + top) / 2f, 0f);
             wallFelts[i].size = new Vector2(WallFeltWidth, top - bottom);
             wallFelts[i].color = feltColor;
         }
@@ -168,9 +195,11 @@ public class LevelBuilder
         }
         background.enabled = true;
         background.sprite = sprite;
-        // Escala para cobrir exatamente 40 × 22,5 unidades, seja qual for o PPU da imagem.
+        // Escala para cobrir exatamente 40 × 22,5 unidades, seja qual for o PPU da imagem. Em tela mais
+        // larga a imagem cresce por igual nos dois eixos (sem esticar só para o lado; corta um pouco em cima/embaixo).
         Vector2 size = sprite.bounds.size;
-        background.transform.localScale = new Vector3(40f / size.x, 22.5f / size.y, 1f);
+        float widen = Arena.HalfWidth / Arena.BaseHalfWidth;
+        background.transform.localScale = new Vector3(40f / size.x, 22.5f / size.y, 1f) * widen;
         Color tint = Color.Lerp(Color.white, platformColor, config.BackgroundTint) * config.BackgroundBrightness;
         tint.a = 1f;
         background.color = tint;
@@ -198,8 +227,9 @@ public class LevelBuilder
             float t = (float)rng.NextDouble();
             Put(Mathf.Lerp(s.minX, s.maxX, t), s.top);
         }
-        Put(-18.5f, FloorTop);
-        Put(18.5f, FloorTop);
+        float corner = Arena.HalfWidth - 1.5f; // perto das paredes, acompanhando a largura da tela
+        Put(-corner, FloorTop);
+        Put(corner, FloorTop);
     }
 
     // Ponto aleatório em cima de alguma superfície, longe do ponto "avoid".

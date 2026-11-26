@@ -7,12 +7,14 @@ public struct StoryLine
     public string speaker;
     public Color color;
     public string text;
+    public string portrait; // "joker", "jack", "queen", "king", "ace" ou vazio (narrador). StoryDialog acha o sprite.
 
-    public StoryLine(string speaker, Color color, string text)
+    public StoryLine(string speaker, Color color, string text, string portrait = "")
     {
         this.speaker = speaker;
         this.color = color;
         this.text = text;
+        this.portrait = portrait;
     }
 }
 
@@ -29,12 +31,17 @@ public static class StoryLines
     public const string TutorialIntro = "tutorial_intro";
     public const string TutorialOutro = "tutorial_outro";
     public const string Ending = "ending";
+    public const string AceHint = "ace_hint";         // Bobo dá a pista dos boatos (final normal)
+    public const string AceReveal = "ace_reveal";     // o Ás aparece depois do Rei
+    public const string AceDefeat = "ace_defeat";
+    public const string EndingThrone = "ending_throne";
+    public const string EndingFree = "ending_free";
     public static string BossIntro(int index) => "boss" + index + "_intro";
     public static string BossDefeat(int index) => "boss" + index + "_defeat";
 
     private static readonly string[] AllIds =
     {
-        Intro, TutorialIntro, TutorialOutro, Ending,
+        Intro, TutorialIntro, TutorialOutro, Ending, AceHint, AceReveal, AceDefeat, EndingThrone, EndingFree,
         "boss0_intro", "boss1_intro", "boss2_intro", "boss0_defeat", "boss1_defeat", "boss2_defeat",
     };
 
@@ -51,8 +58,11 @@ public static class StoryLines
     private static readonly Color RoyalColor = new Color32(0xFF, 0xD4, 0x47, 0xFF);
 
     private static StoryLine Narrator(string text) => new StoryLine("", Color.white, text);
-    private static StoryLine Joker(string text) => new StoryLine(Loc.T("JOKER"), JokerColor, text);
-    private static StoryLine Royal(string nameEn, string text) => new StoryLine(Loc.T(nameEn), RoyalColor, text);
+    private static readonly Color AceColor = new Color32(0x4C, 0xFF, 0x9A, 0xFF);
+
+    private static StoryLine Joker(string text) => new StoryLine(Loc.T("JOKER"), JokerColor, text, "joker");
+    private static StoryLine Royal(string nameEn, string text) => new StoryLine(Loc.T(nameEn), RoyalColor, text, nameEn.ToLowerInvariant());
+    private static StoryLine Ace(string text) => new StoryLine(Loc.T("ACE"), AceColor, text, "ace");
 
     // Cena pelo id (null = não existe).
     public static List<StoryLine> Get(string id)
@@ -63,6 +73,11 @@ public static class StoryLines
             case TutorialIntro: return TutorialIntroLines();
             case TutorialOutro: return TutorialOutroLines();
             case Ending: return EndingLines();
+            case AceHint: return AceHintLines();
+            case AceReveal: return AceRevealLines();
+            case AceDefeat: return AceDefeatLines();
+            case EndingThrone: return ThroneLines();
+            case EndingFree: return FreeLines();
             case "boss0_intro": return JackIntro();
             case "boss1_intro": return QueenIntro();
             case "boss2_intro": return KingIntro();
@@ -251,6 +266,97 @@ public static class StoryLines
             "Irgendwo unter dem Thron wartet ein <color=#FFD447>Ass</color> im Ärmel...",
             "Da qualche parte sotto il trono, un <color=#FFD447>Asso</color> aspetta nella manica...")),
     };
+
+    // ===================== O Ás secreto =====================
+    private static List<StoryLine> AceHintLines() => new List<StoryLine>
+    {
+        Joker(Loc.Pick(
+            "Psst... the tavern talks. Find all 3 <color=#FFD447>rumors about the King</color>\nand the real dealer will have to show his face.",
+            "Psiu... a taverna fala. Descubra os 3 <color=#FFD447>boatos do Rei</color>\ne o verdadeiro dono da mesa vai ter que aparecer.",
+            "Psst... la taberna habla. Descubre los 3 <color=#FFD447>rumores del Rey</color>\ny el verdadero crupier tendrá que dar la cara.",
+            "Psst... la taverne parle. Trouve les 3 <color=#FFD447>rumeurs sur le Roi</color>\net le vrai donneur devra se montrer.",
+            "Psst... die Taverne redet. Finde alle 3 <color=#FFD447>Gerüchte über den König</color>\nund der wahre Geber muss sich zeigen.",
+            "Psst... la taverna parla. Trova le 3 <color=#FFD447>voci sul Re</color>\ne il vero mazziere dovrà mostrarsi.")),
+    };
+
+    private static List<StoryLine> AceRevealLines() => new List<StoryLine>
+    {
+        Narrator(Loc.Pick(
+            "The King's crown rolls across the floor...\nand a card slides out of his sleeve.",
+            "A coroa do Rei rola pelo chão...\ne uma carta escorrega da manga dele.",
+            "La corona del Rey rueda por el suelo...\ny una carta se desliza de su manga.",
+            "La couronne du Roi roule sur le sol...\net une carte glisse de sa manche.",
+            "Die Krone des Königs rollt über den Boden...\nund eine Karte rutscht aus seinem Ärmel.",
+            "La corona del Re rotola sul pavimento...\ne una carta scivola dalla sua manica.")),
+        Ace(Loc.Pick(
+            "The King? Just a card in my hand.\nI am the <color=#4CFF9A>Ace up the Sleeve</color>. I dealt every game.",
+            "O Rei? Só uma carta na minha mão.\nEu sou o <color=#4CFF9A>Ás na Manga</color>. Eu dei as cartas de todo jogo.",
+            "¿El Rey? Solo una carta en mi mano.\nSoy el <color=#4CFF9A>As en la Manga</color>. Repartí cada partida.",
+            "Le Roi ? Juste une carte dans ma main.\nJe suis l'<color=#4CFF9A>As dans la Manche</color>. J'ai distribué chaque partie.",
+            "Der König? Nur eine Karte in meiner Hand.\nIch bin das <color=#4CFF9A>Ass im Ärmel</color>. Ich habe jedes Spiel gegeben.",
+            "Il Re? Solo una carta nella mia mano.\nSono l'<color=#4CFF9A>Asso nella Manica</color>. Ho distribuito ogni partita.")),
+        Ace(Loc.Pick(
+            "I hide <color=#FFD447>TWO numbers</color>. Find the first, then the second...\nif your luck lasts that long.",
+            "Eu escondo <color=#FFD447>DOIS números</color>. Ache o primeiro, depois o segundo...\nse a sua sorte durar até lá.",
+            "Escondo <color=#FFD447>DOS números</color>. Encuentra el primero, luego el segundo...\nsi tu suerte dura tanto.",
+            "Je cache <color=#FFD447>DEUX nombres</color>. Trouve le premier, puis le second...\nsi ta chance tient jusque-là.",
+            "Ich verstecke <color=#FFD447>ZWEI Zahlen</color>. Finde die erste, dann die zweite...\nwenn dein Glück so lange hält.",
+            "Nascondo <color=#FFD447>DUE numeri</color>. Trova il primo, poi il secondo...\nse la tua fortuna dura tanto.")),
+    };
+
+    private static List<StoryLine> AceDefeatLines() => new List<StoryLine>
+    {
+        Ace(Loc.Pick(
+            "Both numbers... called. Fine, villager.\nThe table is yours. What will you do with it?",
+            "Os dois números... descobertos. Tudo bem, aldeão.\nA mesa é sua. O que você vai fazer com ela?",
+            "Los dos números... descubiertos. Está bien, aldeano.\nLa mesa es tuya. ¿Qué harás con ella?",
+            "Les deux nombres... démasqués. Soit, villageois.\nLa table est à toi. Qu'en feras-tu ?",
+            "Beide Zahlen... aufgedeckt. Na gut, Dorfbewohner.\nDer Tisch gehört dir. Was machst du damit?",
+            "Entrambi i numeri... scoperti. Va bene, popolano.\nIl tavolo è tuo. Che cosa ne farai?")),
+    };
+
+    private static List<StoryLine> ThroneLines() => new List<StoryLine>
+    {
+        Narrator(Loc.Pick(
+            "You sit on the throne. The deck feels warm in your hands.\nThe kingdom keeps dealing... and now <color=#FFD447>you</color> are the house.",
+            "Você senta no trono. O baralho parece quente nas suas mãos.\nO reino continua dando cartas... e agora a casa é <color=#FFD447>você</color>.",
+            "Te sientas en el trono. La baraja se siente cálida en tus manos.\nEl reino sigue repartiendo... y ahora la casa eres <color=#FFD447>tú</color>.",
+            "Tu t'assois sur le trône. Le paquet est chaud dans tes mains.\nLe royaume continue de distribuer... et la maison, c'est <color=#FFD447>toi</color>.",
+            "Du setzt dich auf den Thron. Das Deck fühlt sich warm an.\nDas Königreich gibt weiter... und jetzt bist <color=#FFD447>du</color> die Bank.",
+            "Ti siedi sul trono. Il mazzo è caldo tra le tue mani.\nIl regno continua a distribuire... e ora il banco sei <color=#FFD447>tu</color>.")),
+        Joker(Loc.Pick(
+            "Long live the new King! ...I'll be watching your sleeves.",
+            "Vida longa ao novo Rei! ...Vou ficar de olho nas suas mangas.",
+            "¡Larga vida al nuevo Rey! ...Vigilaré tus mangas.",
+            "Longue vie au nouveau Roi ! ...Je surveillerai tes manches.",
+            "Lang lebe der neue König! ...Ich behalte deine Ärmel im Auge.",
+            "Lunga vita al nuovo Re! ...Terrò d'occhio le tue maniche.")),
+    };
+
+    private static List<StoryLine> FreeLines() => new List<StoryLine>
+    {
+        Narrator(Loc.Pick(
+            "You tear the deck in half. Cards rain over the square.\nNo more secret numbers. No more house.",
+            "Você rasga o baralho ao meio. Cartas chovem sobre a praça.\nChega de números secretos. Chega de casa.",
+            "Rompes la baraja por la mitad. Llueven cartas sobre la plaza.\nSe acabaron los números secretos. Se acabó la casa.",
+            "Tu déchires le paquet en deux. Les cartes pleuvent sur la place.\nFini les nombres secrets. Finie la maison.",
+            "Du zerreißt das Deck. Karten regnen über den Platz.\nKeine geheimen Zahlen mehr. Keine Bank mehr.",
+            "Strappi il mazzo a metà. Le carte piovono sulla piazza.\nBasta numeri segreti. Basta banco.")),
+        Joker(Loc.Pick(
+            "A kingdom with no cards... I'll need a new job.\nTavern juggler, maybe?",
+            "Um reino sem cartas... vou precisar de um emprego novo.\nMalabarista de taverna, talvez?",
+            "Un reino sin cartas... necesitaré otro trabajo.\n¿Malabarista de taberna, quizás?",
+            "Un royaume sans cartes... il me faudra un nouveau métier.\nJongleur de taverne, peut-être ?",
+            "Ein Königreich ohne Karten... ich brauche einen neuen Job.\nTavernen-Jongleur vielleicht?",
+            "Un regno senza carte... mi servirà un nuovo lavoro.\nGiocoliere da taverna, forse?")),
+    };
+
+    // Taverna → REVER HISTÓRIA: todas as cenas voltam a aparecer (uma vez cada) nas próximas runs.
+    public static void ResetAll()
+    {
+        foreach (var id in AllIds) PlayerPrefs.DeleteKey(PrefPrefix + id);
+        PlayerPrefs.Save();
+    }
 
     // ===================== Debug (ponte do Editor) =====================
     // call StoryLines.DebugReset → todas as cenas voltam a aparecer

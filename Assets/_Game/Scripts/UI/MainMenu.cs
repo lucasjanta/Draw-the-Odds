@@ -14,6 +14,8 @@ public class MainMenu : MonoBehaviour
     private TextMeshProUGUI howToText;
     private OptionsPanel options;
     private LeaderboardPanel ranking;
+    private TavernPanel tavern;
+    private TextMeshProUGUI tavernLabel;
     private RectTransform titleRect;
     private RawImage pattern;
     private const int PatternTile = 128;   // textura do padrão: 4×4 células de 32 px
@@ -67,6 +69,10 @@ public class MainMenu : MonoBehaviour
         var colors = menu.endlessButton.colors;
         colors.disabledColor = new Color32(0x2A, 0x22, 0x40, 0xFF);
         menu.endlessButton.colors = colors;
+        // TAVERNA ao lado do TUTORIAL / INFINITO (a coluna de botões não cabe mais um embaixo)
+        var tavernButton = menu.AddButton(main, "TAVERN", -166f, new Vector2(104f, 58f), () => menu.ShowPage(menu.tavern.gameObject), 12f);
+        tavernButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(148f, -166f);
+        menu.tavernLabel = tavernButton.transform.Find("Label").GetComponent<TextMeshProUGUI>().NoLoc();
         menu.AddButton(main, "HOW TO PLAY", -230f, size, () => menu.ShowPage(menu.howToPlay));
         menu.AddButton(main, "RANKING", -262f, size, () => menu.ShowPage(menu.ranking.gameObject));
         menu.AddButton(main, "OPTIONS", -294f, size, () => menu.ShowPage(menu.options.gameObject));
@@ -81,6 +87,8 @@ public class MainMenu : MonoBehaviour
         menu.howToPlay = BuildHowToPlay(back.transform, () => menu.ShowPage(null), out menu.howToText);
         menu.options = OptionsPanel.Create(back.transform, () => menu.ShowPage(null));
         menu.ranking = LeaderboardPanel.Create(back.transform, "BACK", () => menu.ShowPage(null));
+        menu.tavern = TavernPanel.Create(back.transform, gm.Config, () => menu.ShowPage(null));
+        ProgressSave.OnChanged += () => { if (menu != null) menu.RefreshLabels(); };
         menu.ShowPage(null);
         back.gameObject.SetActive(false);
         return menu;
@@ -114,6 +122,9 @@ public class MainMenu : MonoBehaviour
                                                              "INFINI - BATS LA DAME", "ENDLOS - BESIEGE DIE DAME", "INFINITO - BATTI LA REGINA") + "</size>";
         endlessLabel.alpha = unlocked ? 1f : 0.45f;
         if (howToText != null) howToText.text = HowToPlayText();
+        // TAVERNA: nome + fichas guardadas
+        if (tavernLabel != null)
+            tavernLabel.text = Loc.T("TAVERN") + "\n" + $"<size=10><color=#FFD447>● {ProgressSave.Chips}</color></size>";
     }
 
     // Mostra uma subtela (ou volta para a principal com null).
@@ -122,7 +133,8 @@ public class MainMenu : MonoBehaviour
     {
         var m = FindAnyObjectByType<MainMenu>();
         if (m == null) return "no menu";
-        m.ShowPage(page == "howto" ? m.howToPlay : page == "options" ? m.options.gameObject : page == "ranking" ? m.ranking.gameObject : null);
+        m.ShowPage(page == "howto" ? m.howToPlay : page == "options" ? m.options.gameObject : page == "ranking" ? m.ranking.gameObject
+                 : page == "tavern" ? m.tavern.gameObject : null);
         return "page " + page;
     }
 
@@ -132,6 +144,7 @@ public class MainMenu : MonoBehaviour
         howToPlay.SetActive(page == howToPlay);
         options.Show(page == options.gameObject);
         if (page == ranking.gameObject) ranking.Show(null, GameManager.SelectedDifficulty); else ranking.Hide();
+        tavern.Show(page == tavern.gameObject);
     }
 
     // Título pulsando devagar (escala) com um balanço leve.
@@ -257,7 +270,16 @@ public class MainMenu : MonoBehaviour
                 $"Orbs {ops} stoppen die Zeit: {Y(N(GameKey.SlotA) + "/" + N(GameKey.SlotB))} ablegen, {Y("KLICK")} verschmelzen",
                 $"Le sfere {ops} fermano il tempo: {Y(N(GameKey.SlotA) + "/" + N(GameKey.SlotB))} metti, {Y("CLIC")} fondi");
 
-        return controls + rules + "\n\n" + suits + "\n\n" + orbs;
+        // RAISE (truco) e coringas: uma linha só, para não lotar a tela
+        string raiseKey = touch ? W("GOLD CHIP", "FICHA DOURADA", "FICHA DORADA", "JETON DORÉ", "GOLDCHIP", "FICHA D'ORO") : N(GameKey.Raise);
+        string raise = W($"{Y(raiseKey)} {RaiseController.ButtonWord}: next card x2 if close, but hurts you if far (1 per fight)",
+                         $"{Y(raiseKey)} {RaiseController.ButtonWord}: próxima carta x2 se perto, mas machuca você se longe (1 por luta)",
+                         $"{Y(raiseKey)} {RaiseController.ButtonWord}: próxima carta x2 si está cerca, pero te daña si está lejos (1 por pelea)",
+                         $"{Y(raiseKey)} {RaiseController.ButtonWord} : carte suivante x2 si proche, te blesse si loin (1 par combat)",
+                         $"{Y(raiseKey)} {RaiseController.ButtonWord}: nächste Karte x2 wenn nah, verletzt dich wenn weit (1 pro Kampf)",
+                         $"{Y(raiseKey)} {RaiseController.ButtonWord}: prossima carta x2 se vicina, ti ferisce se lontana (1 per scontro)");
+
+        return controls + rules + "\n\n" + suits + "\n\n" + orbs + "\n" + raise;
     }
 
     // O texto de regras que antes ficava na tela de título.

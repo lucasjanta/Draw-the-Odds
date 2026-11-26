@@ -130,7 +130,7 @@ public class DiceProjectile : MonoBehaviour
         else sr.transform.Rotate(0f, 0f, spinSpeed * Time.deltaTime);
         if (meteor) UpdateTrail();
         life -= Time.deltaTime;
-        bool outOfArena = Mathf.Abs(transform.position.x) > 22f || transform.position.y > 14f;
+        bool outOfArena = Mathf.Abs(transform.position.x) > Arena.HalfWidth + 2f || transform.position.y > 14f;
         // A ficha quebra quando a borda de baixo encosta no chão (o dado, quando o centro chega perto)
         float groundOffset = coinFlip ? 1.15f : 0.5f;
         if (life <= 0f || outOfArena || transform.position.y < floorY + groundOffset)

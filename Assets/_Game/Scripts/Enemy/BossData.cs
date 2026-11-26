@@ -38,6 +38,16 @@ public class BossData
     [Tooltip("O dado da antecipação escolhe o ataque: elemento 0 = face 1 ... elemento 5 = face 6.")]
     [SerializeField] private BossAttack[] dieFaces = new BossAttack[0];
     [SerializeField, Range(0f, 1f)] private float multiplyChance = 0.08f; // chance de um poder ser ×
+    [Tooltip("Ataques extras (fora do dado): de vez em quando o chefe usa um destes no lugar da face sorteada.")]
+    [SerializeField] private BossAttack[] bonusAttacks = new BossAttack[0];
+    [Tooltip("Chance de trocar o ataque da face por um dos ataques extras (0 = nunca).")]
+    [SerializeField, Range(0f, 1f)] private float bonusAttackChance = 0.2f;
+
+    [Header("Regras especiais")]
+    [Tooltip("Dois números secretos (Ás): acertar o 1º trava ele; o crítico de verdade é acertar os dois em sequência.")]
+    [SerializeField] private bool twoNumbers;
+    [Tooltip("Chance de o chefe responder ao RAISE do jogador com um RE-RAISE (aposta dobrada).")]
+    [SerializeField, Range(0f, 1f)] private float reRaiseChance = 0.3f;
 
     [Header("Música (intro toca 1x e emenda no loop)")]
     [SerializeField] private AudioClip musicIntro;
@@ -72,6 +82,7 @@ public class BossData
     public bool HasAttack(BossAttackType type)
     {
         if (dieFaces != null) foreach (var a in dieFaces) if (a != null && a.Type == type) return true;
+        if (bonusAttacks != null) foreach (var a in bonusAttacks) if (a != null && a.Type == type) return true;
         return false;
     }
 
@@ -95,6 +106,28 @@ public class BossData
         return dieFaces[(Mathf.Clamp(face, 1, 6) - 1) % FaceCount] ?? new BossAttack();
     }
     public float MultiplyChance => multiplyChance;
+    public bool TwoNumbers => twoNumbers;
+    public float ReRaiseChance => reRaiseChance;
+    public float BonusAttackChance => bonusAttackChance;
+    public bool HasBonusAttacks => bonusAttacks != null && bonusAttacks.Length > 0;
+    public BossAttack RandomBonusAttack() => HasBonusAttacks ? bonusAttacks[UnityEngine.Random.Range(0, bonusAttacks.Length)] : null;
+
+    // Usado nos valores padrão / no menu de setup do Editor.
+    public BossData Special(bool twoNumbers, float reRaise, params BossAttack[] bonus)
+    {
+        this.twoNumbers = twoNumbers;
+        reRaiseChance = reRaise;
+        bonusAttacks = bonus;
+        return this;
+    }
+
+    // Só o Editor (menu de setup) usa: põe sprite e ataques extras em chefes que já existiam no asset.
+    public void EditorSetSprite(Sprite s) => sprite = s;
+    public void EditorSetBonus(float reRaise, params BossAttack[] bonus)
+    {
+        reRaiseChance = reRaise;
+        if (bonusAttacks == null || bonusAttacks.Length == 0) bonusAttacks = bonus;
+    }
     public int LayoutIndex => layoutIndex;
     public AudioClip MusicIntro => musicIntro;
     public AudioClip MusicLoop => musicLoop;

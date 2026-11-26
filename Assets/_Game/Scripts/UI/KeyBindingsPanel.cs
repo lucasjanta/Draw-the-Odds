@@ -6,11 +6,11 @@ using UnityEngine.UI;
 
 // Tela de teclas (Opções → CONTROLS): uma linha por ação com a tecla atual.
 // Clicar na tecla → "APERTE UMA TECLA..." → a próxima tecla apertada vira a nova (ESC cancela).
-// Se a tecla já era de outra ação, as duas trocam. RESET volta ao padrão (A/D/S, ESPAÇO, SHIFT, R, Q/E, P).
+// Se a tecla já era de outra ação, as duas trocam. RESET volta ao padrão (A/D/S, ESPAÇO, SHIFT, R, Q/E, P, T).
 public class KeyBindingsPanel : MonoBehaviour
 {
     private static readonly string[] ActionNames =
-        { "MOVE LEFT", "MOVE RIGHT", "DROP DOWN", "JUMP", "DASH", "NEW HAND", "MERGE SLOT 1", "MERGE SLOT 2", "PAUSE" };
+        { "MOVE LEFT", "MOVE RIGHT", "DROP DOWN", "JUMP", "DASH", "NEW HAND", "MERGE SLOT 1", "MERGE SLOT 2", "PAUSE", "RAISE" };
 
     private TextMeshProUGUI[] keyLabels;
     private int waiting = -1; // ação esperando tecla nova (-1 = nenhuma)

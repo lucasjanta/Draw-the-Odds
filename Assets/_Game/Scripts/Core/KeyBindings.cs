@@ -3,7 +3,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 // Ações do teclado que o jogador pode trocar de tecla (Opções → CONTROLS).
-public enum GameKey { Left, Right, Down, Jump, Dash, Redraw, SlotA, SlotB, Pause }
+public enum GameKey { Left, Right, Down, Jump, Dash, Redraw, SlotA, SlotB, Pause, Raise }
 
 // Teclas configuráveis do computador. O jogo inteiro lê o teclado por aqui (Held / Pressed),
 // e os textos mostram a tecla escolhida com Name(...). Cada tecla fica salva no PlayerPrefs.
@@ -14,11 +14,11 @@ public static class KeyBindings
     public static readonly GameKey[] All = (GameKey[])Enum.GetValues(typeof(GameKey));
 
     private static readonly Key[] Defaults =
-        { Key.A, Key.D, Key.S, Key.Space, Key.LeftShift, Key.R, Key.Q, Key.E, Key.P };
+        { Key.A, Key.D, Key.S, Key.Space, Key.LeftShift, Key.R, Key.Q, Key.E, Key.P, Key.T };
 
     // Extra fixa de cada ação (Key.None = nenhuma).
     private static readonly Key[] Extras =
-        { Key.LeftArrow, Key.RightArrow, Key.DownArrow, Key.None, Key.None, Key.None, Key.None, Key.None, Key.Escape };
+        { Key.LeftArrow, Key.RightArrow, Key.DownArrow, Key.None, Key.None, Key.None, Key.None, Key.None, Key.Escape, Key.None };
 
     // Teclas que não podem ser escolhidas (têm outro uso fixo).
     public static bool IsReserved(Key k) =>

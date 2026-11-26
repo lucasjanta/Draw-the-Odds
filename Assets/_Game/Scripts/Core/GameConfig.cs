@@ -84,7 +84,8 @@ public class GameConfig : ScriptableObject
     // Atalho para escrever as faces do dado abaixo.
     private static BossAttack A(BossAttackType t, int count, float speed) => new BossAttack(t, count, speed);
     private const BossAttackType Volley = BossAttackType.Volley, Rain = BossAttackType.Rain,
-        Dash = BossAttackType.Dash, Jokers = BossAttackType.Jokers;
+        Dash = BossAttackType.Dash, Jokers = BossAttackType.Jokers,
+        Roulette = BossAttackType.Roulette, Marked = BossAttackType.MarkedCards;
 
     // Cada chefe: 6 faces do dado = 6 ataques (tipo, quantidade, velocidade). Editáveis no Inspector.
     [Header("Chefes (em ordem)")]
@@ -100,6 +101,15 @@ public class GameConfig : ScriptableObject
             new Color32(0x1E, 0x16, 0x08, 0xFF), new Color32(0x7A, 0x5A, 0x16, 0xFF), 0.25f, 0.5f,
             A(Volley, 4, 16f), A(Rain, 5, 24f), A(Dash, 3, 37f), A(Jokers, 2, 21f), A(Volley, 6, 17f), A(Rain, 7, 25f)).Combo(0.5f).Dice(1.15f, new Color32(0xFF, 0x30, 0x30, 0xFF), true),
     };
+
+    // Ás secreto: aparece depois do Rei quando os 3 boatos do Rei foram descobertos (taverna).
+    // Dois números secretos; fase verde-esmeralda (fundo e plataformas mudam de cor como nos outros chefes).
+    // O sprite é ligado pelo menu Draw the Odds/Setup Story Content.
+    [Header("Chefe secreto (Ás)")]
+    [SerializeField] private BossData secretBoss = new BossData("ACE", 36, 13, 1.25f, 0.85f, false, 0f, 1,
+        new Color32(0x06, 0x1A, 0x14, 0xFF), new Color32(0x0F, 0x6B, 0x4E, 0xFF), 0.2f, 0.5f,
+        A(Volley, 5, 16f), A(Roulette, 9, 9f), A(Marked, 4, 1f), A(Rain, 6, 24f), A(Jokers, 3, 21f), A(Dash, 3, 37f))
+        .Combo(0.45f).Dice(1.15f, new Color32(0x4C, 0xFF, 0x9A, 0xFF), true).Special(true, 0.65f);
 
     [Header("Tutorial (miniboss Coringa)")]
     [SerializeField] private BossData tutorialBoss = new BossData("JOKER", 16, 8, 3.2f, 1.5f, false, 0f, 0,
@@ -269,5 +279,9 @@ public class GameConfig : ScriptableObject
         return list;
     }
     public IReadOnlyList<BossData> Bosses => bosses;
+    public BossData SecretBoss => secretBoss;
+    // Índice 0..2 = chefes da história, 3 = Ás secreto.
+    public int SecretBossIndex => bosses.Count;
+    public BossData BossAt(int index) => index >= 0 && index < bosses.Count ? bosses[index] : secretBoss;
     public BossData TutorialBoss => tutorialBoss;
 }

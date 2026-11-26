@@ -14,6 +14,8 @@ public class GameManager : MonoBehaviour
     public class RunStats
     {
         public int cardsThrown, criticals, fusions, damageTaken, deaths;
+        public int chipsEarned;       // fichas ganhas nesta run (vão para a taverna)
+        public float rankedElapsed = -1f; // tempo da run ao vencer o Rei (o Ás secreto não conta no ranking)
         public float startTime;       // Time.time quando o trecho atual começou
         public float elapsedBefore;   // tempo acumulado das tentativas anteriores
         public float Elapsed => elapsedBefore + (Time.time - startTime);
@@ -94,6 +96,8 @@ public class GameManager : MonoBehaviour
     public BossData CurrentBossData { get; private set; }
     public Suit CurrentBossSuit { get; private set; }
     public PickupSpawner Pickups { get; private set; }
+    public RaiseController Raise { get; } = new RaiseController();
+    public bool IsSecretBoss => !EndlessMode && BossIndex == config.SecretBossIndex;
 
     // O tutorial trava o input do jogador durante as pausas explicativas.
     public bool InputLocked { get; set; }
@@ -131,6 +135,7 @@ public class GameManager : MonoBehaviour
         if (player.GetComponent<PlayerCards>() == null) player.gameObject.AddComponent<PlayerCards>();
 
         level = new LevelBuilder(platformTemplate, floor, config);
+        Arena.OnChanged += level.Refit; // tela mudou de largura: paredes e chão vão para a nova borda
         Pickups = gameObject.AddComponent<PickupSpawner>();
         Pickups.Init(this, level);
         ui = GameUI.Build(this);
@@ -155,8 +160,20 @@ public class GameManager : MonoBehaviour
         Stats.startTime = Time.time;
 
         // A janela da fusão e o preview do resultado dependem da dificuldade.
-        Fusion.WindowProvider = () => CurrentDifficulty.FusionWindow;
-        Fusion.PreviewProvider = () => CurrentDifficulty.FusionPreview;
+        // Coringa Relógio Parado: +5 s (se houver relógio) e mostra o resultado.
+        Fusion.WindowProvider = () => CurrentDifficulty.FusionWindow > 0f ? CurrentDifficulty.FusionWindow + Jokers.ExtraFusionSeconds : 0f;
+        Fusion.PreviewProvider = () => CurrentDifficulty.FusionPreview || Jokers.FusionPreview;
+
+        // Boatos: acompanha a luta atual (dano levado, críticos, 1º acerto, RAISE ganho).
+        PlayerHealth.OnDamaged += amount => Rumors.Track.damageTaken += amount;
+        OnBossHit += r =>
+        {
+            var t = Rumors.Track;
+            if (t.hits == 0 && r.isCritical) t.firstHitCritical = true;
+            t.hits++;
+            if (r.isCritical) t.crits++;
+            if (r.raiseWon) t.raiseWon = true;
+        };
 
         // Dicas curtas (só fora do tutorial e uma vez cada)
         Fusion.OnStarted += () => ui.Tips.Request("fusion");
@@ -202,6 +219,7 @@ public class GameManager : MonoBehaviour
     private void OnDestroy()
     {
         if (Instance == this) Instance = null;
+        if (level != null) Arena.OnChanged -= level.Refit;
     }
 
     private void Update()
@@ -414,6 +432,12 @@ public class GameManager : MonoBehaviour
 
         // Redraws valem para a RUN inteira: só enchem no começo (tutorial ou 1º chefe).
         if (refill) RedrawsLeft = config.RedrawsPerBoss;
+        // Coringa Ficha da Sorte: +1 redraw a cada chefe novo (o "continuar" já volta com os do começo).
+        else if (Jokers.Has(JokerId.LuckyChip) && pendingRedraws < 0) RedrawsLeft++;
+        Jokers.NewBoss();
+        Hand.MaxSize = config.MaxHandSize + Jokers.ExtraMaxHand; // coringa Mão Grande
+        Raise.NewFight(index >= 0);
+        Rumors.BeginFight();
         if (pendingHp > 0) { PlayerHealth.SetCurrent(pendingHp); pendingHp = -1; }
         if (pendingRedraws >= 0) { RedrawsLeft = pendingRedraws; pendingRedraws = -1; }
         OnRedrawsChanged?.Invoke();
@@ -426,9 +450,11 @@ public class GameManager : MonoBehaviour
         else
         {
             AudioManager.Sfx(config.SfxNewHand);
-            yield return DealUpTo(config.StartingHandSize);
+            yield return DealUpTo(StartingHand);
         }
     }
+
+    private int StartingHand => config.StartingHandSize + Jokers.ExtraStartingHand;
 
     private IEnumerator BeginBoss(int index, bool resumed = false)
     {
@@ -440,11 +466,23 @@ public class GameManager : MonoBehaviour
             ui.ShowTitle(false);
             yield return PlayStory(StoryLines.Intro);
         }
-        var data = config.Bosses[index];
-        // Começo de uma run nova (1º chefe): zera as estatísticas (o tutorial não conta).
-        if (index == 0 && !resumed) { Stats = new RunStats { startTime = Time.time }; continuedStage = int.MinValue; }
+        var data = config.BossAt(index);
+        // Começo de uma run nova (1º chefe): zera as estatísticas e os coringas (o tutorial não conta),
+        // e o jogador escolhe o 1º coringa da run.
+        if (index == 0 && !resumed)
+        {
+            Stats = new RunStats { startTime = Time.time };
+            continuedStage = int.MinValue;
+            Jokers.Clear();
+            State = GameState.Transition;
+            ui.ShowTitle(false);
+            yield return PickJoker();
+        }
         CurrentBossSuit = SuitInfo.Random(); // cada vez que um chefe surge, o naipe é sorteado
-        ui.ShowBanner($"BOSS {index + 1}/{config.Bosses.Count}", BossTitle(data), 2.2f);
+        string bossSub = index == config.SecretBossIndex
+            ? Loc.Pick("SECRET BOSS", "CHEFE SECRETO", "JEFE SECRETO", "BOSS SECRET", "GEHEIMER BOSS", "BOSS SEGRETO")
+            : $"BOSS {index + 1}/{config.Bosses.Count}";
+        ui.ShowBanner(bossSub, BossTitle(data), 2.2f);
         PlayBossMusic(data);
         yield return PrepareFight(data, index, index <= 0 && !resumed);
         stageStartHp = PlayerHealth.Current;
@@ -483,7 +521,15 @@ public class GameManager : MonoBehaviour
         CurrentRule = resumed ? resumedRule : round >= 4 ? PickRule() : EndlessRule.None;
         var data = config.Bosses[template].ForEndless(round, CurrentRule);
         bool fresh = round == 1 && !resumed;
-        if (fresh) { Stats = new RunStats { startTime = Time.time }; continuedStage = int.MinValue; }
+        if (fresh)
+        {
+            Stats = new RunStats { startTime = Time.time };
+            continuedStage = int.MinValue;
+            Jokers.Clear();
+            State = GameState.Transition;
+            ui.ShowTitle(false);
+            yield return PickJoker();
+        }
 
         CurrentBossSuit = SuitInfo.Random();
         string sub = Loc.Pick($"ENDLESS - ROUND {round}", $"INFINITO - RODADA {round}", $"INFINITO - RONDA {round}",
@@ -549,6 +595,7 @@ public class GameManager : MonoBehaviour
             ui.ShowTitle(false);
             yield return PlayStory(StoryLines.Intro);
         }
+        Jokers.Clear(); // o tutorial não usa coringas
         ui.ShowBanner("TUTORIAL", config.TutorialBoss.DisplayName, 1.6f);
         AudioManager.Music(config.MenuMusicIntro, config.MenuMusic); // tutorial continua com a música do menu
         var hand = new[]
@@ -703,24 +750,62 @@ public class GameManager : MonoBehaviour
         // Última fala do chefe derrotado (1ª vez; nunca no infinito)
         yield return PlayStory(StoryLines.BossDefeat(BossIndex));
 
+        // Fichas (taverna) e boatos (só nos chefes da história)
+        int chips = AwardBossChips();
+        var rumors = EndlessMode ? new List<int>() : Rumors.Evaluate(BossIndex);
+        chips += rumors.Count * Rumors.ChipReward;
+        Stats.chipsEarned += rumors.Count * Rumors.ChipReward;
+
         // Venceu a Dama pela primeira vez: libera o modo infinito.
         bool unlockedNow = !EndlessMode && BossIndex >= 1 && !EndlessUnlocked;
         if (unlockedNow) EndlessUnlocked = true;
+        string chipText = $"+{chips} " + Loc.Pick("CHIPS", "FICHAS", "FICHAS", "JETONS", "CHIPS", "FICHE");
         string sub = unlockedNow ? Loc.Pick("ENDLESS MODE UNLOCKED!", "MODO INFINITO LIBERADO!", "¡MODO INFINITO DESBLOQUEADO!",
-                                            "MODE INFINI DÉBLOQUÉ !", "ENDLOSMODUS FREIGESCHALTET!", "MODALITÀ INFINITA SBLOCCATA!") : "DEFEATED";
+                                            "MODE INFINI DÉBLOQUÉ !", "ENDLOSMODUS FREIGESCHALTET!", "MODALITÀ INFINITA SBLOCCATA!") + "  ·  " + chipText
+                                 : "DEFEATED  ·  " + chipText;
         ui.ShowBanner(sub, BossTitle(CurrentBossData) + " FOLDED!", unlockedNow ? 2.6f : 2f);
         yield return new WaitForSeconds(unlockedNow ? 3f : 2.4f);
+        // Boatos novos: um aviso por boato (o texto completo fica no mural da taverna)
+        foreach (int rumor in rumors)
+        {
+            ui.ShowBanner(Loc.Pick("NEW RUMOR!", "BOATO NOVO!", "¡RUMOR NUEVO!", "NOUVELLE RUMEUR !", "NEUES GERÜCHT!", "NUOVA VOCE!") + $"  +{Rumors.ChipReward}",
+                          "<size=60%>" + Rumors.Lore(rumor) + "</size>", 2.6f);
+            yield return new WaitForSeconds(3f);
+        }
+
+        bool kingBeaten = !EndlessMode && BossIndex == config.Bosses.Count - 1;
+        if (kingBeaten) Stats.rankedElapsed = Stats.Elapsed; // o ranking conta a run até o Rei
+        bool toAce = kingBeaten && ProgressSave.AceUnlocked;
+
+        if (IsSecretBoss)
+        {
+            // Ás derrotado: a escolha do final
+            yield return PlayStory(StoryLines.AceDefeat, true);
+            int ending = -1;
+            ui.Ending.Open(e => ending = e);
+            while (ending < 0) yield return null;
+            ui.Ending.Close();
+            ProgressSave.MarkEnding(ending);
+            yield return PlayStory(ending == 0 ? StoryLines.EndingThrone : StoryLines.EndingFree, true);
+            ShowFinalVictory();
+            yield break;
+        }
 
         if (EndlessMode)
         {
+            if (!Jokers.BeltFull) yield return PickJoker();
             yield return ui.Curtain.Cover();
             yield return Portal.Interstitial();
             StartCoroutine(BeginEndlessRound(EndlessRound + 1));
             yield return null;
             yield return ui.Curtain.Reveal();
         }
-        else if (BossIndex + 1 < config.Bosses.Count)
+        else if (BossIndex + 1 < config.Bosses.Count || toAce)
         {
+            // O Ás se revela depois do Rei (só com os 3 boatos do Rei descobertos)
+            if (toAce) yield return PlayStory(StoryLines.AceReveal, true);
+            // Escolhe um coringa novo antes do próximo chefe
+            if (!Jokers.BeltFull) yield return PickJoker();
             // Transição: cartas caem e cobrem a tela, a fase troca por baixo, e as cartas caem embora.
             yield return ui.Curtain.Cover();
             // Tela coberta pelas cartas, entre um chefe e outro: momento certo para o anúncio do portal.
@@ -731,16 +816,90 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            yield return PlayStory(StoryLines.Ending); // final da história (gancho para o Ás)
-            State = GameState.Victory;
-            player.ControlsEnabled = false;
-            skipTitle = false;
-            acceptClickTime = Time.unscaledTime + 1.5f;
-            AudioManager.Sfx(config.SfxVictory, 1f, 0f);
-            Portal.HappyMoment(true); // vitória final: o momento mais raro
-            AudioManager.Music(config.MenuMusicIntro, config.MenuMusic, 3f);
-            ui.ShowVictory(Stats, Stats.Elapsed, SelectedDifficulty);
+            yield return PlayStory(StoryLines.Ending); // final "normal" (gancho para o Ás)
+            // Bobo dá a pista dos boatos (uma vez), enquanto o Ás não foi liberado
+            if (!ProgressSave.AceUnlocked) yield return PlayStory(StoryLines.AceHint);
+            ShowFinalVictory();
         }
+    }
+
+    private void ShowFinalVictory()
+    {
+        State = GameState.Victory;
+        player.ControlsEnabled = false;
+        skipTitle = false;
+        acceptClickTime = Time.unscaledTime + 1.5f;
+        AudioManager.Sfx(config.SfxVictory, 1f, 0f);
+        Portal.HappyMoment(true); // vitória final: o momento mais raro
+        AudioManager.Music(config.MenuMusicIntro, config.MenuMusic, 3f);
+        float time = Stats.rankedElapsed > 0f ? Stats.rankedElapsed : Stats.Elapsed;
+        ui.ShowVictory(Stats, time, SelectedDifficulty);
+    }
+
+    // ===================== Fichas e coringas =====================
+    // Fichas por chefe vencido: Valete 15 · Dama 25 · Rei 40 · Ás 60 (infinito: 10 + 2 por rodada)
+    // + 1 por crítico na luta. EASY rende metade e HARDCORE 50% a mais.
+    private int AwardBossChips()
+    {
+        int baseChips = EndlessMode ? 10 + 2 * EndlessRound
+            : BossIndex switch { 0 => 15, 1 => 25, 2 => 40, _ => 60 };
+        baseChips += Rumors.Track.crits;
+        float mult = SelectedDifficulty == Difficulty.Easy ? 0.5f : SelectedDifficulty == Difficulty.Hardcore ? 1.5f : 1f;
+        int chips = Mathf.Max(1, Mathf.RoundToInt(baseChips * mult));
+        ProgressSave.AddChips(chips);
+        Stats.chipsEarned += chips;
+        return chips;
+    }
+
+    // Tela "ESCOLHA UM CORINGA": 3 sorteados entre os liberados na taverna. Espera o jogador escolher.
+    private IEnumerator PickJoker()
+    {
+        var choices = JokerCatalog.RollChoices(3);
+        if (choices.Count == 0 || Jokers.BeltFull) yield break;
+        bool wasLocked = InputLocked;
+        InputLocked = true;
+        JokerId? picked = null;
+        ui.JokerPick.Open(choices, id => picked = id);
+        while (picked == null) yield return null;
+        ui.JokerPick.Close();
+        Jokers.Add(picked.Value);
+        // Ficha da Sorte: +1 redraw na hora
+        if (picked.Value == JokerId.LuckyChip) { RedrawsLeft++; OnRedrawsChanged?.Invoke(); }
+        if (picked.Value == JokerId.BigHand) Hand.MaxSize = config.MaxHandSize + Jokers.ExtraMaxHand;
+        yield return null; // o clique que escolheu não vira arremesso
+        InputLocked = wasLocked;
+    }
+
+    // ===================== RAISE / TRUCO =====================
+    // Botão RAISE (ou tecla T): a próxima carta vale a aposta. Às vezes o chefe responde RE-RAISE.
+    public void TryRaise()
+    {
+        if (!CanAct || Fusion.Active || Boss == null || Boss.IsDead || IsTutorial || !Raise.Available) return;
+        float chance = EndlessMode ? 0.4f : CurrentBossData.ReRaiseChance;
+        bool reRaise = Raise.Start(chance);
+        Fx.Popup(RaiseController.RaiseWord, player.transform.position + Vector3.up * 2.8f, new Color(1f, 0.83f, 0.28f), 12f, 1.3f, 1.6f, true, Color.white);
+        AudioManager.Sfx(config.SfxPowerUp, 0.9f, 0f, 1.2f);
+        Fx.Shake(0.2f, 0.15f);
+        if (reRaise) StartCoroutine(ReRaiseRoutine());
+    }
+
+    private IEnumerator ReRaiseRoutine()
+    {
+        yield return new WaitForSeconds(0.45f); // o grito do jogador aparece antes da resposta
+        if (Boss == null || Boss.IsDead || State != GameState.Playing) { Raise.Answer(false); yield break; }
+        bool wasLocked = InputLocked;
+        InputLocked = true;
+        FusionController.SetTimeScale(0f); // tempo parado enquanto decide
+        Fx.Popup(RaiseController.ReRaiseWord, Boss.transform.position + Vector3.up * 3.6f, new Color(1f, 0.35f, 0.3f), 13f, 1.6f, 1.2f, true, Color.white);
+        AudioManager.Sfx(config.SfxDiceLand, 1f, 0f, 0.8f);
+        bool? call = null;
+        ui.RaiseUi.Ask(c => call = c);
+        while (call == null) yield return null;
+        Raise.Answer(call.Value);
+        if (call.Value && Boss != null) Boss.SpeedBoost(8f);
+        FusionController.SetTimeScale(1f);
+        yield return null;
+        InputLocked = wasLocked;
     }
 
     private void HandlePlayerDied()
@@ -804,7 +963,7 @@ public class GameManager : MonoBehaviour
         RedrawsLeft--;
         Hand.RemoveAll();
         AudioManager.Sfx(config.SfxNewHand);
-        StartCoroutine(DealUpTo(config.StartingHandSize));
+        StartCoroutine(DealUpTo(StartingHand));
         OnRedrawsChanged?.Invoke();
         OnRedraw?.Invoke();
         Fx.Popup("REDRAW!", player.transform.position + Vector3.up * 2.5f, Color.white, 6f, 0.8f);
@@ -1059,6 +1218,36 @@ public class GameManager : MonoBehaviour
         else if (arg == "restart") gm.RestartRun();
         else gm.BackToMainMenu();
         return arg + " canContinue=" + gm.CanContinue;
+    }
+
+    // Debug: ataques novos. Ex.: call GameManager.DebugRoulette 9 · DebugMarked 4
+    public static string DebugRoulette(string steps)
+    {
+        if (Instance == null || Instance.Boss == null) return "no boss";
+        Instance.Boss.DebugRoulette(int.Parse(steps));
+        return "roulette";
+    }
+
+    public static string DebugMarked(string count)
+    {
+        if (Instance == null || Instance.Boss == null) return "no boss";
+        Instance.Boss.DebugMarked(int.Parse(count));
+        return "marked";
+    }
+
+    // Debug: dá um coringa na run atual. Ex.: call GameManager.DebugJoker SharpSword
+    public static string DebugJoker(string id)
+    {
+        if (!Enum.TryParse(id, true, out JokerId j)) return "unknown joker";
+        Jokers.Add(j);
+        return "belt: " + string.Join(",", Jokers.Belt);
+    }
+
+    public static string DebugRaise()
+    {
+        if (Instance == null) return "no game";
+        Instance.TryRaise();
+        return "raise " + Instance.Raise.State;
     }
 
     public static string DebugBoss(string index)

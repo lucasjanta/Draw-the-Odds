@@ -61,7 +61,7 @@ public class BossHUD : MonoBehaviour
         history.Clear();
         historyText.text = "-";
         nameText.text = b.Title;
-        rangeText.text = $"NUMBER ? ({b.Data.MinNumber}–{b.Data.MaxNumber})";
+        RefreshRange();
         fillValue = ghostValue = targetFill = 1f;
         flying = 0;
         UIFactory.SetBar(fill, 1f);
@@ -73,7 +73,24 @@ public class BossHUD : MonoBehaviour
             history.Clear();
             historyText.text = "<color=#B9A0FF>NEW NUMBER!</color>";
             flash = 1f;
+            RefreshRange();
         };
+    }
+
+    // "NUMBER ? (1–13)". Ás: "1º 7 · 2º ?" depois de travar o 1º. Dado Viciado: PAR / ÍMPAR do número atual.
+    private void RefreshRange()
+    {
+        if (boss == null) return;
+        string range = $"({boss.Data.MinNumber}–{boss.Data.MaxNumber})";
+        string text;
+        if (boss.Data.TwoNumbers)
+            text = boss.OnSecondNumber ? $"<color=#4CFF9A>{boss.LockedNumber}</color> + ? {range}" : $"? + ? {range}";
+        else text = $"NUMBER ? {range}";
+        if (Jokers.ShowParity)
+            text += boss.SecretNumber % 2 == 0
+                ? " <color=#FFB040>" + Loc.Pick("EVEN", "PAR", "PAR", "PAIR", "GERADE", "PARI") + "</color>"
+                : " <color=#FFB040>" + Loc.Pick("ODD", "ÍMPAR", "IMPAR", "IMPAIR", "UNGERADE", "DISPARI") + "</color>";
+        rangeText.text = text;
     }
 
     private void AddHistory(HitResult r)

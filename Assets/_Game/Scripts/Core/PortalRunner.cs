@@ -28,18 +28,15 @@ public class PortalRunner : MonoBehaviour
 
     // Nos portais o jogo roda num iframe de tamanho qualquer (ex.: 800×450, 960×540). A Pixel Perfect
     // Camera só amplia em números inteiros: em 960×540 ela fica em 1× e o mundo aparece pequeno, com
-    // bordas vazias em volta. "StretchFill" desenha sempre os 640×360 do jogo e estica para preencher
-    // a tela (mantendo a proporção). Pixels podem ficar levemente desiguais, mas o jogo ocupa a tela toda.
-    private static void FitCamera()
-    {
-        var cam = Camera.main;
-        if (cam == null) return;
-        var ppc = cam.GetComponent<PixelPerfectCamera>();
-        if (ppc != null) ppc.cropFrame = PixelPerfectCamera.CropFrame.StretchFill;
-    }
+    // bordas vazias em volta. "StretchFill" desenha os 640×360 do jogo e estica para preencher a tela
+    // (mantendo a proporção). Em tela mais larga que 16:9 o Arena aumenta a largura de referência,
+    // então o mundo cresce para os lados em vez de aparecer faixa preta (celular 20:9).
+    private static void FitCamera() => Arena.Refresh(force: true);
 
     private void Update()
     {
+        Arena.Refresh(); // a janela pode mudar de tamanho (tela cheia no navegador, girar o tablet)
+
         // Avisa o portal se o jogador está jogando de verdade (luta rolando, sem pausa, sem anúncio).
         var gm = GameManager.Instance;
         Portal.SetGameplay(gm != null && gm.State == GameManager.GameState.Playing && !GameTime.Paused && !Portal.AdPlaying);

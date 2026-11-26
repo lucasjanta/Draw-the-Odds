@@ -83,7 +83,9 @@ public class PlayerHUD : MonoBehaviour
     private void RefreshTexts()
     {
         string pips = "";
-        for (int i = 0; i < gm.Config.RedrawsPerBoss; i++)
+        // Ficha da Sorte pode passar do máximo: mostra todas as bolinhas
+        int total = Mathf.Max(gm.Config.RedrawsPerBoss, gm.RedrawsLeft);
+        for (int i = 0; i < total; i++)
             pips += i < gm.RedrawsLeft ? "<color=#FFD447>●</color>" : "<color=#555577>●</color>";
         redrawText.text = (VirtualInput.Active ? "REDRAW " : $"[{KeyBindings.Name(GameKey.Redraw)}] REDRAW ") + pips; // no toque não há tecla
         handText.text = $"HAND {gm.Hand.Count}/{gm.Hand.MaxSize}";

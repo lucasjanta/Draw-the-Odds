@@ -20,7 +20,12 @@ public class BossController : MonoBehaviour
     // Nome com o naipe colorido, ex.: "JACK ♠" (sem naipe no coringa do tutorial)
     public string Title => Data.HasSuits ? $"{Data.DisplayName} {SuitInfo.Colored(SuitInfo.Symbol(Suit), Suit)}" : Data.DisplayName;
     public int CurrentHp { get; private set; }
+    // Número que vale AGORA (no Ás, o 1º número e, depois de travado, o 2º).
     public int SecretNumber { get; private set; }
+    // Ás (dois números): o 2º número, e o 1º depois que foi acertado ("travado"; -1 = ainda não).
+    public int SecondNumber { get; private set; }
+    public int LockedNumber { get; private set; } = -1;
+    public bool OnSecondNumber => LockedNumber >= 0;
     public bool IsDead { get; private set; }
     public bool IsVulnerable => !IsDead && !intro;
 
@@ -69,8 +74,13 @@ public class BossController : MonoBehaviour
     // Raiva: 0 com a vida cheia → Data.Enrage com a vida no fim. Deixa tudo mais rápido
     // (só Dama e Rei têm Enrage > 0 no GameConfig).
     public float Rage => Data.Enrage * (1f - (float)CurrentHp / Mathf.Max(1, Data.MaxHp));
-    private float PaceFactor => 1f + Rage;               // pausas, passeio e antecipação mais curtos
-    private float ProjectileFactor => 1f + Rage * 0.5f;  // projéteis um pouco mais rápidos
+    private float PaceFactor => (1f + Rage) * Boost;               // pausas, passeio e antecipação mais curtos
+    private float ProjectileFactor => (1f + Rage * 0.5f) * Boost;  // projéteis um pouco mais rápidos
+
+    // RE-RAISE aceito (CALL): o chefe fica mais rápido por alguns segundos.
+    private float boostUntil;
+    private float Boost => Time.time < boostUntil ? 1.25f : 1f;
+    public void SpeedBoost(float seconds) => boostUntil = Mathf.Max(boostUntil, Time.time + seconds);
 
     public static BossController Spawn(GameConfig config, BossData data, Suit suit, PlayerHealth player, float floorY)
     {
@@ -100,8 +110,20 @@ public class BossController : MonoBehaviour
         col.size = size * 0.8f; // 80% do sprite: encostar na borda da carta não machuca
 
         boss.CurrentHp = data.MaxHp;
-        boss.SecretNumber = UnityEngine.Random.Range(data.MinNumber, data.MaxNumber + 1);
+        boss.RollNumbers();
         return boss;
+    }
+
+    // Sorteia o número (e o 2º, no Ás). O 2º é sempre diferente do 1º.
+    private void RollNumbers()
+    {
+        int old = SecretNumber;
+        do SecretNumber = UnityEngine.Random.Range(Data.MinNumber, Data.MaxNumber + 1);
+        while (SecretNumber == old && old > 0 && Data.MaxNumber > Data.MinNumber);
+        LockedNumber = -1;
+        if (!Data.TwoNumbers) return;
+        do SecondNumber = UnityEngine.Random.Range(Data.MinNumber, Data.MaxNumber + 1);
+        while (SecondNumber == SecretNumber && Data.MaxNumber > Data.MinNumber);
     }
 
     private void Start()
@@ -176,6 +198,8 @@ public class BossController : MonoBehaviour
     private BossAttack PickAttack(int face)
     {
         BossAttack attack = Data.AttackForFace(face);
+        // De vez em quando um ataque extra (roleta, cartas marcadas...) no lugar da face.
+        if (Data.HasBonusAttacks && UnityEngine.Random.value < Data.BonusAttackChance) attack = Data.RandomBonusAttack() ?? attack;
         if (attack.Type == BossAttackType.Jokers && config.RandomJoker() == null)
             attack = new BossAttack(BossAttackType.Volley, attack.Count, attack.Speed);
 
@@ -203,6 +227,8 @@ public class BossController : MonoBehaviour
             case BossAttackType.Rain: yield return Rain(attack.Count, speed); break;
             case BossAttackType.Dash: yield return Dash(attack.Count, speed); break;
             case BossAttackType.Jokers: yield return Jokers(attack.Count, speed); break;
+            case BossAttackType.Roulette: yield return Roulette(attack.Count, speed); break;
+            case BossAttackType.MarkedCards: yield return MarkedCards(attack.Count); break;
         }
     }
 
@@ -319,7 +345,7 @@ public class BossController : MonoBehaviour
                     // Cada letra tem ~0,58 u neste tamanho: segura o texto dentro da tela.
                     float half = label.Length * 0.29f;
                     Vector3 labelPos = transform.position + Vector3.down * (sr.bounds.extents.y + 0.9f);
-                    labelPos.x = Mathf.Clamp(labelPos.x, -19.5f + half, 19.5f - half);
+                    labelPos.x = Mathf.Clamp(labelPos.x, -Arena.HalfWidth + 0.5f + half, Arena.HalfWidth - 0.5f - half);
                     Fx.Popup(label, labelPos, tint, 7f, duration * (1f - landAt) + 0.4f, 0.6f);
                     OnDieLanded?.Invoke(label);
                     // "Clack" do dado parando; com 2 dados (ataque misturado) toca de novo, mais agudo, como alerta.
@@ -370,11 +396,12 @@ public class BossController : MonoBehaviour
     private IEnumerator Rain(int count, float speed)
     {
         const float spacing = 3.4f; // fichas de 2,5 u: sempre sobra um vão para desviar
-        var xs = new List<float> { Mathf.Clamp(player.transform.position.x, -17.5f, 17.5f) };
+        float rainEdge = Arena.HalfWidth - 2.5f; // fichas não caem coladas na parede
+        var xs = new List<float> { Mathf.Clamp(player.transform.position.x, -rainEdge, rainEdge) };
         int guard = 0;
         while (xs.Count < count && guard++ < 60)
         {
-            float x = UnityEngine.Random.Range(-17.5f, 17.5f);
+            float x = UnityEngine.Random.Range(-rainEdge, rainEdge);
             bool farEnough = true;
             foreach (float other in xs) if (Mathf.Abs(other - x) < spacing) farEnough = false;
             if (farEnough) xs.Add(x);
@@ -457,9 +484,9 @@ public class BossController : MonoBehaviour
             fromLeft.Add(left);
             float y = LaneY(lane);
             // Faixa do andar inteiro + duas setas na borda apontando para onde o coringa vai.
-            AddStripe(group, new Vector3(0f, y, 0f), new Vector2(38.5f, JokerProjectile.Radius * 2.3f), JokerDanger);
+            AddStripe(group, new Vector3(0f, y, 0f), new Vector2(Arena.HalfWidth * 2f - 1.5f, JokerProjectile.Radius * 2.3f), JokerDanger);
             float angle = left ? 90f : -90f;   // a seta base aponta para baixo: +90° = direita
-            float edge = left ? -17.6f : 17.6f, step = left ? 1.3f : -1.3f;
+            float edge = left ? -(Arena.HalfWidth - 2.4f) : Arena.HalfWidth - 2.4f, step = left ? 1.3f : -1.3f;
             AddArrow(group, new Vector3(edge, y, 0f), angle, JokerDanger);
             AddArrow(group, new Vector3(edge + step, y, 0f), angle, JokerDanger);
         }
@@ -488,10 +515,112 @@ public class BossController : MonoBehaviour
         return best;
     }
 
+    // ===================== Ataques novos =====================
+    // Roleta: o chefe para e gira, soltando dados em DOIS braços de espiral (como uma roleta girando).
+    // steps = quantos "cliques" da roleta (cada passo solta 2 dados). Sempre sobra vão entre os braços.
+    private static readonly Color RouletteColor = new Color(0.45f, 1f, 0.6f);
+
+    private IEnumerator Roulette(int steps, float speed)
+    {
+        Vector2 origin = transform.position;
+        float angle = UnityEngine.Random.Range(0f, 360f);
+        float turn = UnityEngine.Random.value < 0.5f ? 24f : -24f; // gira para um lado ou para o outro
+        // Aviso: anel verde saindo do chefe
+        var ring = Fx.MakeSprite("RouletteRing", Fx.Ring, origin, RouletteColor, 95);
+        ring.gameObject.AddComponent<ShockRing>().Init(6f, 0.5f, 1f);
+        yield return new WaitForSeconds(0.35f);
+        for (int i = 0; i < steps; i++)
+        {
+            for (int arm = 0; arm < 2; arm++)
+            {
+                Vector2 dir = Quaternion.Euler(0f, 0f, angle + arm * 180f) * Vector2.right;
+                DiceProjectile.Spawn(config, UnityEngine.Random.Range(1, 7), origin, dir * speed * Data.DiceSpeedMultiplier, 0f, floorY)
+                    .WithTrail(RouletteColor, Data.DangerousDice);
+            }
+            AudioManager.SfxThrottled(config.SfxDiceLand, 0.1f, 0.45f, 0.04f, 1.3f + 0.03f * i);
+            angle += turn;
+            yield return new WaitForSeconds(0.11f);
+        }
+        yield return new WaitForSeconds(0.4f);
+    }
+
+    // Cartas Marcadas: cartas caem nos andares (uma sempre perto do player), piscam e explodem.
+    private static readonly Color MarkedDanger = new Color32(0xFF, 0xD4, 0x47, 0xFF);
+    private const float MarkedRadius = 1.9f;
+
+    private IEnumerator MarkedCards(int count)
+    {
+        var spots = new List<Vector2>();
+        int mask = LayerMask.GetMask("Ground");
+        float edge = Arena.HalfWidth - 2f;
+        for (int guard = 0; spots.Count < count && guard < 40; guard++)
+        {
+            // 1ª carta: embaixo do player; as outras, em lugares sorteados longe umas das outras
+            bool first = spots.Count == 0;
+            float x = first ? Mathf.Clamp(player.transform.position.x, -edge, edge) : UnityEngine.Random.Range(-edge, edge);
+            float fromY = first ? player.transform.position.y + 1f : 11f;
+            var hit = Physics2D.Raycast(new Vector2(x, fromY), Vector2.down, 30f, mask);
+            if (hit.collider == null) continue;
+            Vector2 p = hit.point + Vector2.up * 0.7f;
+            bool far = true;
+            foreach (var o in spots) if (Vector2.Distance(o, p) < MarkedRadius * 2f) far = false;
+            if (far) spots.Add(p);
+        }
+
+        // As cartas voam do chefe até o lugar (girando) e o círculo mostra a área da explosão
+        var cards = new List<SpriteRenderer>();
+        var group = new List<Warning>();
+        foreach (var p in spots)
+        {
+            var card = Fx.MakeSprite("MarkedCard", config.CardBack, transform.position, new Color(1f, 0.85f, 0.4f), 70);
+            card.transform.localScale = Vector3.one * 0.3f;
+            cards.Add(card);
+            StartCoroutine(DropCard(card.transform, p));
+            var zone = Fx.MakeSprite("MarkedZone", Fx.Circle, p, new Color(1f, 0.83f, 0.28f, 0f), -40);
+            zone.transform.localScale = Vector3.one * MarkedRadius * 2f / Mathf.Max(0.01f, Fx.Circle.bounds.size.x);
+            var w = new Warning { sr = zone, color = MarkedDanger, basePos = p, stripe = true };
+            group.Add(w);
+            warnings.Add(w);
+        }
+        AudioManager.Sfx(config.SfxThrow, 0.7f, 0.05f, 0.8f);
+        yield return BlinkWarnings(group, 1.25f);
+
+        foreach (var card in cards)
+        {
+            if (card == null) continue;
+            Vector2 p = card.transform.position;
+            Fx.Burst(p, MarkedDanger, 16, 10f, 0.35f);
+            Fx.Burst(p, Color.white, 8, 6f, 0.25f);
+            var boom = Fx.MakeSprite("MarkedBoom", Fx.Ring, p, MarkedDanger, 150);
+            boom.gameObject.AddComponent<ShockRing>().Init(MarkedRadius * 2.2f, 0.3f, 1f);
+            Vector2 body = (Vector2)player.transform.position + Vector2.up * 0.85f;
+            if (Vector2.Distance(body, p) <= MarkedRadius) player.Damage(1, p);
+            Destroy(card.gameObject);
+        }
+        AudioManager.Sfx(config.SfxBossDashImpact, 0.7f, 0.05f, 1.2f);
+        Fx.Shake(0.35f, 0.2f);
+        yield return new WaitForSeconds(0.4f);
+    }
+
+    private IEnumerator DropCard(Transform card, Vector2 target)
+    {
+        Vector2 start = card.position;
+        for (float t = 0f; t < 0.4f && card != null; t += Time.deltaTime)
+        {
+            float k = t / 0.4f;
+            card.position = Vector2.Lerp(start, target, k) + Vector2.up * Mathf.Sin(k * Mathf.PI) * 2f;
+            card.rotation = Quaternion.Euler(0f, 0f, k * 720f);
+            yield return null;
+        }
+        if (card != null) { card.position = target; card.rotation = Quaternion.identity; }
+    }
+
     // Debug: força o ataque dos coringas (call GameManager.DebugJokers).
     public void DebugJokers(int count) => StartCoroutine(Jokers(count, 16f));
     public void DebugRain(int count) => StartCoroutine(Rain(count, 16f));
     public void DebugVolley(int count) => StartCoroutine(Volley(count, 14f));
+    public void DebugRoulette(int steps) => StartCoroutine(Roulette(steps, 9f));
+    public void DebugMarked(int count) => StartCoroutine(MarkedCards(count));
 
     // Seta de perigo (pixel art com contorno preto, escala inteira 2×). angle 0 = aponta para baixo.
     private void AddArrow(List<Warning> group, Vector3 pos, float angle, Color color)
@@ -552,10 +681,27 @@ public class BossController : MonoBehaviour
     }
 
     // ===================== Dano =====================
-    public HitResult ReceiveCard(Card card, Vector3 hitPosition)
+    // raise: 0 = carta normal · 1 = RAISE · 2 = CALL (ver LuckyMath.ApplyRaise)
+    public HitResult ReceiveCard(Card card, Vector3 hitPosition, int raise = 0)
     {
+        // Coringa Carta Marcada: a 1ª carta que acerta cada chefe vira o número exato.
+        bool marked = !IsDead && !intro && global::Jokers.TryUseMarked();
+        if (marked)
+        {
+            card = new Card(card.suit, SecretNumber);
+            Fx.Popup("MARKED!", hitPosition + Vector3.up * 1.2f, new Color(1f, 0.83f, 0.28f), 8f, 1f);
+        }
         var r = LuckyMath.Evaluate(card, SecretNumber);
+        r.marked = marked;
+        LuckyMath.ApplyRaise(ref r, raise);
         if (IsDead) return r;
+
+        // Ás (dois números): acertar o 1º só TRAVA ele (dano de crítico); o 2º logo depois = ROYAL FLUSH (x1,5).
+        if (Data.TwoNumbers && r.isCritical)
+        {
+            if (!OnSecondNumber) r.firstLocked = true;
+            else { r.royalFlush = true; r.amount = Mathf.CeilToInt(r.amount * 1.5f); }
+        }
 
         if (!r.isHeal) CurrentHp = Mathf.Max(CannotDie ? 1 : 0, CurrentHp - r.amount);
         r.defeated = CurrentHp <= 0;
@@ -567,7 +713,7 @@ public class BossController : MonoBehaviour
         {
             HintDirection.Higher => "▲ HIGHER",
             HintDirection.Lower => "▼ LOWER",
-            _ => "EXACT!",
+            _ => r.royalFlush ? "ROYAL FLUSH!" : r.firstLocked ? "1 OF 2!" : "EXACT!",
         };
         // Pista com impacto (entra grande e "bate"); mais perto do número = maior.
         float hintSize = r.isCritical ? 14f : r.distance <= 2 ? 10f : 8.5f;
@@ -590,6 +736,18 @@ public class BossController : MonoBehaviour
             Fx.Burst(transform.position, Color.white, 16, 14f, 0.25f);
         }
         if (r.amount > 0 && !r.isHeal && !r.defeated) StartCoroutine(HurtFlash()); // golpe final: sem brilho (o chefe só morre)
+        if (r.nearMiss) Fx.Popup("NEAR MISS!", top + Vector3.up * 1.4f, new Color(1f, 0.54f, 0.24f), 8f, 1.2f);
+        // RAISE: ganhou (dano multiplicado) ou estourou (o player leva dano)
+        if (r.raiseWon)
+        {
+            Fx.Popup($"x{LuckyMath.RaiseMultiplier(r.raise)}!", top + Vector3.up * 2.4f, new Color(1f, 0.83f, 0.28f), 13f, 1.5f, 1.6f, true, Color.white);
+            ScreenFlash.Play(new Color(1f, 0.83f, 0.3f), 0.25f, 0.25f);
+        }
+        else if (r.raiseBust > 0)
+        {
+            Fx.Popup("BUSTED!", player.transform.position + Vector3.up * 2.6f, new Color(1f, 0.3f, 0.3f), 10f, 1.4f, 1.6f, true);
+            player.Damage(r.raiseBust, hitPosition);
+        }
 
         OnHit?.Invoke(r);
         OnHealthChanged?.Invoke(CurrentHp, Data.MaxHp);
@@ -597,6 +755,15 @@ public class BossController : MonoBehaviour
         if (r.defeated)
         {
             Die();
+        }
+        else if (r.firstLocked)
+        {
+            // Ás: o 1º número fica travado à mostra e o jogo passa a valer o 2º
+            LockedNumber = SecretNumber;
+            SecretNumber = SecondNumber;
+            StartCoroutine(FlipCard());
+            OnNumberChanged?.Invoke();
+            Fx.Popup("NUMBER 2!", transform.position + Vector3.up * (sr.bounds.extents.y + 1.6f), RouletteColor, 11f, 1.8f);
         }
         else if (r.isCritical)
         {
@@ -662,9 +829,7 @@ public class BossController : MonoBehaviour
         Destroy(die.gameObject);
         StartCoroutine(FlipCard()); // aviso visual: a carta do chefe gira (vira o verso e volta)
 
-        int old = SecretNumber;
-        while (SecretNumber == old && Data.MaxNumber > Data.MinNumber)
-            SecretNumber = UnityEngine.Random.Range(Data.MinNumber, Data.MaxNumber + 1);
+        RollNumbers(); // (no Ás, os dois números mudam e a trava some)
         rerolling = false;
         OnNumberChanged?.Invoke();
         // Destaque: o número mudou, as pistas antigas não valem mais.

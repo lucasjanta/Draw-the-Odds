@@ -52,7 +52,8 @@ public class PlayerController : MonoBehaviour
     // ---------- Dash ----------
     public bool IsDashing => stateMachine.Current == DashState;
     public float DashTime => dashTime;
-    public float DashCooldown01 => Mathf.Clamp01((Time.time - lastDashTime) / dashCooldown); // 1 = pronto
+    public float DashCooldown01 => Mathf.Clamp01((Time.time - lastDashTime) / EffectiveDashCooldown); // 1 = pronto
+    private float EffectiveDashCooldown => dashCooldown * Jokers.DashCooldownMultiplier; // coringa Pé de Coelho
 
     // Eventos usados pelo tutorial
     public event Action OnJumped;
@@ -310,7 +311,7 @@ public class PlayerController : MonoBehaviour
     public bool TryStartDash()
     {
         bool pressed = Time.time - lastDashPressedTime <= 0.1f;
-        if (!pressed || Time.time < lastDashTime + dashCooldown || !ControlsEnabled) return false;
+        if (!pressed || Time.time < lastDashTime + EffectiveDashCooldown || !ControlsEnabled) return false;
         ChangeState(DashState);
         return true;
     }

@@ -13,6 +13,14 @@ public struct HitResult
     public int bonusCards;   // ♦ compra cartas
     public HintDirection hint;
     public bool defeated;
+    // Coringas e RAISE (preenchidos pelo BossController)
+    public bool nearMiss;     // Quase Lá: errou por 1 e bateu como crítico
+    public bool marked;       // Carta Marcada: a carta virou o número exato
+    public int raise;         // 0 = normal · 1 = RAISE · 2 = CALL (aceitou o RE-RAISE)
+    public bool raiseWon;     // RAISE perto do número (dano multiplicado)
+    public int raiseBust;     // RAISE longe do número: dano que o PLAYER leva
+    public bool firstLocked;  // Ás: acertou o 1º número (falta o 2º)
+    public bool royalFlush;   // Ás: acertou os dois números em sequência
 }
 
 // Matemática da "sorte": distância entre carta e número secreto → dano.
@@ -33,7 +41,8 @@ public static class LuckyMath
         return 0;
     }
 
-    public static float SuitMultiplier(Suit suit) => suit == Suit.Spades ? 1.5f : 1f;
+    // ♠ x1,5 (x2 com o coringa Espada Afiada)
+    public static float SuitMultiplier(Suit suit) => suit == Suit.Spades ? Jokers.SpadeMultiplier : 1f;
 
     public static int FinalDamage(int baseDamage, Suit suit) =>
         Mathf.CeilToInt(baseDamage * SuitMultiplier(suit));
@@ -54,6 +63,9 @@ public static class LuckyMath
     {
         int dist = Distance(card.value, secret);
         int baseDmg = BaseDamage(dist);
+        // Coringa Quase Lá: errar por 1 bate como crítico (mas o número não muda)
+        bool nearMiss = dist == 1 && Jokers.NearMissCrit;
+        if (nearMiss) baseDmg = CriticalDamage;
         var r = new HitResult
         {
             card = card,
@@ -61,9 +73,29 @@ public static class LuckyMath
             isCritical = dist == 0,
             hint = Hint(card.value, secret),
             isHeal = card.suit == Suit.Hearts,
+            nearMiss = nearMiss,
         };
         r.amount = r.isHeal ? baseDmg : FinalDamage(baseDmg, card.suit);
-        if (card.suit == Suit.Diamonds && baseDmg > 0) r.bonusCards = r.isCritical ? 2 : 1;
+        if (r.isHeal && r.amount > 0) r.amount += Jokers.ExtraHeal; // Coração de Ouro
+        if (card.suit == Suit.Diamonds && baseDmg > 0) r.bonusCards = (r.isCritical ? 2 : 1) + Jokers.ExtraDiamondCards;
         return r;
+    }
+
+    // ===================== RAISE / TRUCO =====================
+    public const int RaiseNear = 2;       // até 2 do número: o RAISE paga
+    public const int RaiseBustFrom = 6;   // 6 ou mais longe: o RAISE estoura (o player leva dano)
+    public static int RaiseMultiplier(int level) => level >= 2 ? 3 : 2; // RAISE x2 · CALL x3
+
+    // Aplica o RAISE num resultado já calculado.
+    public static void ApplyRaise(ref HitResult r, int level)
+    {
+        r.raise = level;
+        if (level <= 0) return;
+        if (r.distance <= RaiseNear && r.amount > 0)
+        {
+            r.raiseWon = true;
+            r.amount *= RaiseMultiplier(level);
+        }
+        else if (r.distance >= RaiseBustFrom) r.raiseBust = level; // RAISE: 1 de dano · CALL: 2
     }
 }

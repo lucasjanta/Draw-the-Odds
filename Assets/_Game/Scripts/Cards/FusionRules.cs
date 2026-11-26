@@ -40,6 +40,7 @@ public static class FusionRules
         error = null;
         if (a.suit != b.suit && !allowMixedSuits) { error = "SAME SUIT ONLY"; return false; }
         int value = Compute(type, a.value, b.value);
+        if (Jokers.WildMerges) return true; // coringa Carta Curinga: nunca falha (Resolve ajusta o número)
         if (value <= 0) { error = "THAT MAKES ZERO!"; return false; }
         if (value > Card.MaxValue) { error = $"OVER {Card.MaxValue}!"; return false; }
         return true;
@@ -49,6 +50,8 @@ public static class FusionRules
     public static Card Resolve(PowerType type, Card a, Card b)
     {
         Suit suit = a.suit == b.suit ? a.suit : (Random.value < 0.5f ? a.suit : b.suit);
-        return new Card(suit, Compute(type, a.value, b.value));
+        int value = Compute(type, a.value, b.value);
+        if (Jokers.WildMerges) value = Mathf.Clamp(value, 1, Card.MaxValue);
+        return new Card(suit, value);
     }
 }

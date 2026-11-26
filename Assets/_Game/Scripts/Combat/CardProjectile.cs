@@ -9,6 +9,7 @@ public class CardProjectile : MonoBehaviour
     private const float Lifetime = 1.8f;
 
     private Card card;
+    private int raise;   // 0 = normal · 1 = RAISE · 2 = CALL
     private Transform target;
     private float speed, homing, cone, age;
     private Rigidbody2D body;
@@ -18,7 +19,7 @@ public class CardProjectile : MonoBehaviour
     private float trailTimer;
 
     // Fábrica: monta o objeto inteiro em código (sem prefab).
-    public static CardProjectile Spawn(GameConfig config, Card card, Vector2 position, Vector2 direction, Transform target)
+    public static CardProjectile Spawn(GameConfig config, Card card, Vector2 position, Vector2 direction, Transform target, int raise = 0)
     {
         var go = new GameObject($"Card {card}");
         go.layer = LayerMask.NameToLayer("Projectile");
@@ -37,11 +38,14 @@ public class CardProjectile : MonoBehaviour
         spin.SetParent(go.transform, false);
         // Visual: o VERSO da carta (card_back) a 1/4 da escala (58×80 px → ~0,9 × 1,25 unidade).
         // Girando rápido, a escala não inteira não aparece. O número não vai na carta: ele aparece no acerto.
-        var sr = Fx.MakeSprite("Sprite", config.CardBack != null ? config.CardBack : config.Blank(card.suit), position, Color.white, 60, spin);
+        // Cor do verso escolhido na taverna; carta com RAISE brilha dourada.
+        Color tint = raise > 0 ? new Color(1f, 0.85f, 0.35f) : CardBacks.Tint;
+        var sr = Fx.MakeSprite("Sprite", config.CardBack != null ? config.CardBack : config.Blank(card.suit), position, tint, 60, spin);
         sr.transform.localScale = Vector3.one * 0.25f;
 
         var p = go.AddComponent<CardProjectile>();
         p.card = card;
+        p.raise = raise;
         p.target = target;
         p.speed = config.CardSpeed;
         // No toque mirar com o dedo é menos preciso que com o mouse: a carta corrige mais a rota.
@@ -104,7 +108,7 @@ public class CardProjectile : MonoBehaviour
         var boss = other.GetComponentInParent<BossController>();
         if (boss == null || boss.IsDead) return;
         consumed = true;
-        boss.ReceiveCard(card, transform.position);
+        boss.ReceiveCard(card, transform.position, raise);
         Destroy(gameObject);
     }
 }

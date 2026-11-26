@@ -11,6 +11,8 @@ public class TouchJoystick : MonoBehaviour, IPointerDownHandler, IDragHandler, I
     private const float Radius = 34f;        // raio do movimento do pino (px do Canvas de referência)
     private const float DeadZone = 0.3f;
     private const float DownThreshold = 0.6f;
+    private const float EdgeMargin = 18f;    // a base nunca fica a menos disto da borda da tela
+    private static float BaseHalf => Radius + 9f; // metade do tamanho da base (Radius * 2 + 18)
 
     private RectTransform area, baseRect, knob;
     private CanvasGroup visual;
@@ -31,7 +33,7 @@ public class TouchJoystick : MonoBehaviour, IPointerDownHandler, IDragHandler, I
         j.area = zr;
 
         var baseImg = UIFactory.Image("Base", zr, new Color(1f, 1f, 1f, 0.16f), Fx.Circle);
-        j.baseRect = baseImg.rectTransform.Place(new Vector2(0f, 0f), new Vector2(0.5f, 0.5f), new Vector2(64f, 62f), new Vector2(Radius * 2f + 18f, Radius * 2f + 18f));
+        j.baseRect = baseImg.rectTransform.Place(new Vector2(0f, 0f), new Vector2(0.5f, 0.5f), new Vector2(92f, 80f), new Vector2(Radius * 2f + 18f, Radius * 2f + 18f)); // descanso: longe da borda (antes 64,62 = colado)
         var ring = UIFactory.Image("Ring", j.baseRect, new Color(1f, 1f, 1f, 0.25f), Fx.Circle);
         ring.rectTransform.Stretch(4f);
         var knobImg = UIFactory.Image("Knob", j.baseRect, new Color(1f, 1f, 1f, 0.7f), Fx.Circle);
@@ -48,7 +50,13 @@ public class TouchJoystick : MonoBehaviour, IPointerDownHandler, IDragHandler, I
         pointerId = e.pointerId;
         // A base vai para onde o dedo encostou.
         RectTransformUtility.ScreenPointToLocalPointInRectangle(area, e.position, e.pressEventCamera, out var local);
-        baseRect.anchoredPosition = local - area.rect.min; // âncora no canto inferior esquerdo da área
+        Vector2 p = local - area.rect.min; // âncora no canto inferior esquerdo da área
+        // Encostou muito perto da borda: a base fica um pouco para dentro (o pino ainda segue o dedo),
+        // senão metade do joystick ficava fora da tela e não dava para puxar para a esquerda.
+        float min = BaseHalf + EdgeMargin;
+        p.x = Mathf.Max(p.x, min);
+        p.y = Mathf.Max(p.y, min);
+        baseRect.anchoredPosition = p;
         visual.alpha = 1f;
         UpdateStick(e);
     }

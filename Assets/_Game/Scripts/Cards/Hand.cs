@@ -4,7 +4,7 @@ using System.Collections.Generic;
 // Mão de cartas: C# puro (não é MonoBehaviour). A UI (HandView) só OUVE os eventos.
 public class Hand
 {
-    public int MaxSize { get; }
+    public int MaxSize { get; set; } // coringa Mão Grande aumenta durante a run
     public int Count => cards.Count;
     public bool IsFull => cards.Count >= MaxSize;
     public bool IsEmpty => cards.Count == 0;

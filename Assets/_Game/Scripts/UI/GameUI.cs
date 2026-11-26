@@ -22,6 +22,9 @@ public class GameUI : MonoBehaviour
     public DifficultyPanel Difficulty { get; private set; }
     public CardCurtain Curtain { get; private set; }
     public StoryDialog Story { get; private set; }
+    public JokerPickPanel JokerPick { get; private set; }
+    public RaiseUi RaiseUi { get; private set; }
+    public EndingPanel Ending { get; private set; }
     private TextMeshProUGUI bannerTitle, bannerSub, endTitle, endBody;
     private Coroutine bannerRoutine;
     private CanvasGroup promptGroup;
@@ -60,8 +63,12 @@ public class GameUI : MonoBehaviour
 
         LowHpVignette.Create(root, gm);
         HandView.Create(root, gm);
-        PlayerHUD.Create(root, gm);
-        BossHUD.Create(root, gm);
+        // Painéis do HUD (cantos de cima) ficam dentro da área segura do celular (fora do furo da câmera).
+        var safe = UIFactory.Rect("SafeHUD", root).Stretch();
+        SafeArea.Add(safe);
+        PlayerHUD.Create(safe, gm);
+        JokerBelt.Create(safe, gm); // coringas da run, embaixo do painel do player
+        BossHUD.Create(safe, gm);
         FusionPanel.Create(root, gm);
 
         // Banner central ("BOSS 1/3 — JACK")
@@ -85,8 +92,11 @@ public class GameUI : MonoBehaviour
         ui.victoryBoard = LeaderboardPanel.Create(root, "MAIN MENU", gm.BackToMainMenu);
         ui.endlessBoard = LeaderboardPanel.Create(root, "BACK", () => ui.endlessBoard.Hide());
         TouchControls.Create(root, gm);
+        ui.RaiseUi = RaiseUi.Create(root, gm);
         ui.mainMenu = MainMenu.Create(root, gm);
         ui.Difficulty = DifficultyPanel.Create(root);
+        ui.JokerPick = JokerPickPanel.Create(root);
+        ui.Ending = EndingPanel.Create(root);
         ui.Story = StoryDialog.Create(root, gm.Config); // abaixo da pausa: o menu de pausa abre por cima do diálogo
         ui.Pause = PauseMenu.Create(root, gm);
         ui.Curtain = CardCurtain.Create(root, gm.Config);
@@ -263,6 +273,8 @@ public class GameUI : MonoBehaviour
                                     $"{boss} descubrió tu farol.", $"{boss} a démasqué ton bluff.",
                                     $"{boss} hat deinen Bluff durchschaut.", $"{boss} ha visto il tuo bluff.");
         }
+        // Fichas ganhas nesta run (ficam guardadas para a taverna mesmo perdendo)
+        if (gm.Stats.chipsEarned > 0) endBody.text += "\n" + $"<size=10><color=#FFD447>● +{gm.Stats.chipsEarned}</color></size>";
         restartLabel.text = GameManager.EndlessMode
             ? Loc.Pick("RESTART (ROUND 1)", "RECOMEÇAR (RODADA 1)", "REINICIAR (RONDA 1)", "RECOMMENCER (MANCHE 1)", "NEUSTART (RUNDE 1)", "RICOMINCIA (ROUND 1)")
             : Loc.Pick("RESTART FROM THE JACK", "RECOMEÇAR DO VALETE", "REINICIAR DESDE LA J", "RECOMMENCER AU VALET", "NEUSTART BEIM BUBEN", "RICOMINCIA DAL FANTE");

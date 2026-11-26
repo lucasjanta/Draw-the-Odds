@@ -1,7 +1,8 @@
 using System;
 using UnityEngine;
 
-public enum BossAttackType { Volley, Rain, Dash, Jokers }
+// Só adicione tipos no FIM (o número de cada um fica salvo no GameConfig).
+public enum BossAttackType { Volley, Rain, Dash, Jokers, Roulette, MarkedCards }
 
 // O que uma face do dado do chefe faz. Cada chefe tem 6 destes (faces 1..6), editáveis no
 // Inspector do GameConfig: tipo do ataque, quantidade (dados, fichas, investidas ou coringas) e velocidade.
@@ -9,7 +10,7 @@ public enum BossAttackType { Volley, Rain, Dash, Jokers }
 public class BossAttack
 {
     [SerializeField] private BossAttackType type = BossAttackType.Volley;
-    [Tooltip("Volley = dados no leque · Rain = fichas caindo · Dash = investidas · Jokers = coringas (1 por andar, máx. 4)")]
+    [Tooltip("Volley = dados no leque · Rain = fichas caindo · Dash = investidas · Jokers = coringas (1 por andar, máx. 4) · Roulette = espiral de dados (passos) · MarkedCards = cartas que caem nos andares e explodem")]
     [SerializeField, Min(1)] private int count = 1;
     [Tooltip("Unidades por segundo (Dash: velocidade da investida).")]
     [SerializeField, Min(1f)] private float speed = 10f;
@@ -33,6 +34,8 @@ public class BossAttack
         BossAttackType.Volley => $"DICE x{count}",
         BossAttackType.Rain => $"CHIP RAIN x{count}",
         BossAttackType.Dash => count > 1 ? $"CHARGE x{count}" : "CHARGE",
+        BossAttackType.Roulette => "ROULETTE",
+        BossAttackType.MarkedCards => $"MARKED CARDS x{count}",
         _ => $"JOKERS x{count}",
     };
 
@@ -42,6 +45,8 @@ public class BossAttack
         BossAttackType.Volley => new Color(1f, 0.75f, 0.45f),
         BossAttackType.Rain => new Color(0.55f, 0.85f, 1f),
         BossAttackType.Jokers => new Color(0.8f, 0.55f, 1f),
+        BossAttackType.Roulette => new Color(0.45f, 1f, 0.6f),
+        BossAttackType.MarkedCards => new Color(1f, 0.85f, 0.3f),
         _ => new Color(1f, 0.45f, 0.45f),
     };
 }
