@@ -14,6 +14,7 @@ public class GameManager : MonoBehaviour
     public class RunStats
     {
         public int cardsThrown, criticals, fusions, damageTaken, deaths;
+        public int hits, damageDealt, healed, bossesBeaten, raisesWon; // mostrados na pausa e no ranking
         public int chipsEarned;       // fichas ganhas nesta run (vão para a taverna)
         public float rankedElapsed = -1f; // tempo da run ao vencer o Rei (o Ás secreto não conta no ranking)
         public float startTime;       // Time.time quando o trecho atual começou
@@ -87,7 +88,10 @@ public class GameManager : MonoBehaviour
     public PlayerHealth PlayerHealth { get; private set; }
     public Hand Hand { get; private set; }
     public FusionController Fusion { get; private set; }
+    // Chefe "principal" (o 1º vivo). Os Valetes Gêmeos são dois chefes ao mesmo tempo: ActiveBosses.
     public BossController Boss { get; private set; }
+    private readonly List<BossController> activeBosses = new List<BossController>();
+    public IReadOnlyList<BossController> ActiveBosses => activeBosses;
     public int BossIndex { get; private set; }        // -1 = tutorial
     public bool IsTutorial => BossIndex < 0;
     public int RedrawsLeft { get; private set; }
@@ -133,6 +137,9 @@ public class GameManager : MonoBehaviour
         PlayerHealth = player.GetComponent<PlayerHealth>();
         if (PlayerHealth == null) PlayerHealth = player.gameObject.AddComponent<PlayerHealth>();
         if (player.GetComponent<PlayerCards>() == null) player.gameObject.AddComponent<PlayerCards>();
+        // Chapéu e roupa do guarda-roupa (taverna)
+        var anim = player.GetComponentInChildren<Animator>();
+        if (anim != null) VillagerLook.Attach(anim.gameObject, config);
 
         level = new LevelBuilder(platformTemplate, floor, config);
         Arena.OnChanged += level.Refit; // tela mudou de largura: paredes e chão vão para a nova borda
@@ -143,7 +150,7 @@ public class GameManager : MonoBehaviour
 
     private void Start()
     {
-        PlayerHealth.SetMax(config.PlayerMaxHp, true);
+        PlayerHealth.SetMax(PlayerMaxHp, true);
         PlayerHealth.OnDied += HandlePlayerDied;
         PlayerHealth.OnDamaged += amount => Stats.damageTaken += amount;
         Fusion.OnEnded += success => { if (success) Stats.fusions++; }; // o som da carta nova toca no FusionPanel (na revelação)
@@ -172,7 +179,7 @@ public class GameManager : MonoBehaviour
             if (t.hits == 0 && r.isCritical) t.firstHitCritical = true;
             t.hits++;
             if (r.isCritical) t.crits++;
-            if (r.raiseWon) t.raiseWon = true;
+            if (r.raiseWon) { t.raiseWon = true; Stats.raisesWon++; }
         };
 
         // Dicas curtas (só fora do tutorial e uma vez cada)
@@ -380,7 +387,7 @@ public class GameManager : MonoBehaviour
             endless = EndlessMode,
             stage = EndlessMode ? EndlessRound : BossIndex,
             rule = CurrentRule,
-            hp = Mathf.Max(stageStartHp, Mathf.CeilToInt(config.PlayerMaxHp / 2f)),
+            hp = Mathf.Max(stageStartHp, Mathf.CeilToInt(PlayerMaxHp / 2f)),
             redraws = stageStartRedraws,
             stats = Stats,
         };
@@ -419,7 +426,7 @@ public class GameManager : MonoBehaviour
         Fusion.Cancel();
         Pickups.StopAndClear();
         ClearProjectiles();
-        if (Boss != null) Destroy(Boss.gameObject);
+        DestroyBosses();
         ApplyLevel(data);
 
         player.ResetTo(new Vector2(0f, LevelBuilder.FloorTop + 0.05f));
@@ -428,7 +435,8 @@ public class GameManager : MonoBehaviour
         PlayerHealth.cannotDie = index < 0;
         // A vida só enche no começo da run (tutorial ou 1º chefe): derrotar um chefe NÃO cura.
         // Morreu = run nova, do 1º chefe (vida e redraws cheios de novo).
-        if (refill) PlayerHealth.SetMax(config.PlayerMaxHp, true);
+        // (coringa Tudo ou Nada: −3 de vida máxima)
+        if (refill) PlayerHealth.SetMax(PlayerMaxHp, true);
 
         // Redraws valem para a RUN inteira: só enchem no começo (tutorial ou 1º chefe).
         if (refill) RedrawsLeft = config.RedrawsPerBoss;
@@ -455,6 +463,29 @@ public class GameManager : MonoBehaviour
     }
 
     private int StartingHand => config.StartingHandSize + Jokers.ExtraStartingHand;
+    public int PlayerMaxHp => Mathf.Max(2, config.PlayerMaxHp + Jokers.MaxHpDelta);
+
+    private void DestroyBosses()
+    {
+        foreach (var b in activeBosses) if (b != null) Destroy(b.gameObject);
+        activeBosses.Clear();
+        if (Boss != null) Destroy(Boss.gameObject);
+        Boss = null;
+    }
+
+    // Alvo do homing da carta: o chefe vivo mais alinhado com a direção do arremesso (gêmeos).
+    public Transform TargetFor(Vector2 origin, Vector2 dir)
+    {
+        Transform best = null;
+        float bestAngle = float.MaxValue;
+        foreach (var b in activeBosses)
+        {
+            if (b == null || b.IsDead) continue;
+            float angle = Vector2.Angle(dir, (Vector2)b.transform.position - origin);
+            if (angle < bestAngle) { bestAngle = angle; best = b.transform; }
+        }
+        return best != null ? best : Boss != null ? Boss.transform : null;
+    }
 
     private IEnumerator BeginBoss(int index, bool resumed = false)
     {
@@ -478,20 +509,31 @@ public class GameManager : MonoBehaviour
             ui.ShowTitle(false);
             yield return PickJoker();
         }
-        CurrentBossSuit = SuitInfo.Random(); // cada vez que um chefe surge, o naipe é sorteado
-        string bossSub = index == config.SecretBossIndex
+        // Naipe: sorteado, fixo (Valetes) ou o 1º das fases (Dama). O Rei troca a cada ataque.
+        CurrentBossSuit = data.StartSuit();
+        bool secret = index == config.SecretBossIndex;
+        string bossSub = secret
             ? Loc.Pick("SECRET BOSS", "CHEFE SECRETO", "JEFE SECRETO", "BOSS SECRET", "GEHEIMER BOSS", "BOSS SEGRETO")
             : $"BOSS {index + 1}/{config.Bosses.Count}";
         ui.ShowBanner(bossSub, BossTitle(data), 2.2f);
         PlayBossMusic(data);
         yield return PrepareFight(data, index, index <= 0 && !resumed);
+        // O Ás é a luta final (secreta): o jogador chega com a vida e as novas mãos cheias.
+        if (secret && !resumed)
+        {
+            PlayerHealth.SetMax(PlayerMaxHp, true);
+            RedrawsLeft = Mathf.Max(RedrawsLeft, config.RedrawsPerBoss);
+            OnRedrawsChanged?.Invoke();
+            Fx.Popup(Loc.Pick("FULL HEALTH!", "VIDA CHEIA!", "¡VIDA LLENA!", "VIE PLEINE !", "VOLLE GESUNDHEIT!", "VITA PIENA!"),
+                     player.transform.position + Vector3.up * 2.6f, new Color(0.3f, 1f, 0.6f), 9f, 1.6f);
+        }
         stageStartHp = PlayerHealth.Current;
         stageStartRedraws = RedrawsLeft;
         yield return new WaitForSeconds(0.6f);
 
         SpawnBoss(data);
         yield return new WaitForSeconds(1.4f);
-        if (!resumed) yield return PlayStory(StoryLines.BossIntro(index)); // o chefe se apresenta (1ª vez)
+        if (!resumed) yield return PlayStory(StoryLines.BossIntro(data.StoryId)); // o chefe se apresenta (1ª vez)
         PlayerHealth.forcedInvulnerable = false;
         State = GameState.Playing;
         Pickups.PowersEnabled = Pickups.CardsEnabled = true;
@@ -531,7 +573,7 @@ public class GameManager : MonoBehaviour
             yield return PickJoker();
         }
 
-        CurrentBossSuit = SuitInfo.Random();
+        CurrentBossSuit = data.StartSuit();
         string sub = Loc.Pick($"ENDLESS - ROUND {round}", $"INFINITO - RODADA {round}", $"INFINITO - RONDA {round}",
                               $"INFINI - MANCHE {round}", $"ENDLOS - RUNDE {round}", $"INFINITO - ROUND {round}");
         if (CurrentRule != EndlessRule.None) sub += "  ·  " + RuleName(CurrentRule);
@@ -623,7 +665,7 @@ public class GameManager : MonoBehaviour
         Fusion.Cancel();
         Pickups.StopAndClear();
         ClearProjectiles();
-        if (Boss != null) Destroy(Boss.gameObject);
+        DestroyBosses();
         StartCoroutine(ChooseDifficultyThenStart(true));
     }
 
@@ -675,17 +717,53 @@ public class GameManager : MonoBehaviour
         PlayBossMusic(CurrentBossData);
     }
 
-    // Nome do chefe atual com o naipe (ex.: "JACK ♠").
-    private string BossTitle(BossData data) =>
-        data.HasSuits ? $"{data.DisplayName} {SuitInfo.Colored(SuitInfo.Symbol(CurrentBossSuit), CurrentBossSuit)}" : data.DisplayName;
+    // Nome do chefe atual com o naipe (ex.: "JACK ♠"). Gêmeos: os dois naipes. Rei (naipe por ataque): sem naipe.
+    private string BossTitle(BossData data)
+    {
+        if (!data.HasSuits || data.SuitMode == BossSuitMode.PerAttack) return data.BannerName;
+        string suits = SuitInfo.Colored(SuitInfo.Symbol(CurrentBossSuit), CurrentBossSuit);
+        if (data.Twin) suits += SuitInfo.Colored(SuitInfo.Symbol(data.TwinSuit), data.TwinSuit);
+        return $"{data.BannerName} {suits}";
+    }
 
     public BossController SpawnBoss(BossData data)
     {
-        Boss = BossController.Spawn(config, data, CurrentBossSuit, PlayerHealth, LevelBuilder.FloorTop);
-        Boss.OnHit += HandleBossHit;
-        Boss.OnDefeated += HandleBossDefeated;
-        OnBossSpawned?.Invoke(Boss);
+        DestroyBosses();
+        // Gêmeos: um de cada lado; o 2º espera um pouco antes do 1º ataque (os dois não atacam juntos).
+        float x = data.Twin ? -6f : 0f;
+        Boss = SpawnOne(data, CurrentBossSuit, x, 0f);
+        if (data.Twin)
+        {
+            var twin = SpawnOne(data, data.TwinSuit, 6f, 1.6f);
+            Boss.SetPartner(twin);
+            twin.SetPartner(Boss);
+        }
         return Boss;
+    }
+
+    private BossController SpawnOne(BossData data, Suit suit, float x, float delay)
+    {
+        var b = BossController.Spawn(config, data, suit, PlayerHealth, LevelBuilder.FloorTop, x, delay);
+        activeBosses.Add(b);
+        b.OnHit += HandleBossHit;
+        b.OnDefeated += () => HandleOneBossDefeated(b);
+        OnBossSpawned?.Invoke(b);
+        return b;
+    }
+
+    // Um chefe caiu. Com gêmeos, a luta só acaba quando os dois caírem.
+    private void HandleOneBossDefeated(BossController b)
+    {
+        foreach (var other in activeBosses)
+        {
+            if (other != null && other != b && !other.IsDead)
+            {
+                Boss = other; // o sobrevivente vira o chefe principal (pistas, RAISE...)
+                AudioManager.Sfx(config.SfxBossDefeated, 0.7f, 0f, 1.2f);
+                return;
+            }
+        }
+        HandleBossDefeated();
     }
 
     // "Match": quanto mais perto do número do chefe, maior o match (vale para dano e para cura de Copas).
@@ -701,13 +779,21 @@ public class GameManager : MonoBehaviour
 
     private void HandleBossHit(HitResult r)
     {
-        if (r.isHeal) PlayerHealth.Heal(r.amount);
+        // ♥ com coringa: cura além do dano
+        if (r.healAmount > 0)
+        {
+            PlayerHealth.Heal(r.healAmount);
+            Stats.healed += r.healAmount;
+            AudioManager.Sfx(config.SfxHeal, 0.7f);
+        }
+        // ♦ Mina de Ouro: fichas na hora (contam no total da run)
+        if (r.bonusChips > 0) { ProgressSave.AddChips(r.bonusChips); Stats.chipsEarned += r.bonusChips; }
         if (r.isCritical) AudioManager.Sfx(config.SfxCritical, 1f, 0f);
-        else if (r.isHeal) AudioManager.Sfx(config.SfxHeal);
         else if (r.amount > 0) AudioManager.Sfx(config.SfxHit);
         else AudioManager.Sfx(config.SfxMiss, 0.8f); // acertou longe do número: som próprio de "sem dano"
         if (!r.isCritical) PlayCloseness(r.distance);
         if (r.isCritical) Stats.criticals++;
+        if (r.amount > 0) { Stats.hits++; Stats.damageDealt += r.amount; }
         ui.Tips.Request(r.isCritical ? "crit" : "hint");
         if (r.bonusCards > 0)
         {
@@ -748,16 +834,19 @@ public class GameManager : MonoBehaviour
         }
 
         // Última fala do chefe derrotado (1ª vez; nunca no infinito)
-        yield return PlayStory(StoryLines.BossDefeat(BossIndex));
+        yield return PlayStory(StoryLines.BossDefeat(CurrentBossData.StoryId));
+        Stats.bossesBeaten++;
 
-        // Fichas (taverna) e boatos (só nos chefes da história)
+        // Fichas (taverna) e boatos (só nos chefes da história que têm boatos)
         int chips = AwardBossChips();
-        var rumors = EndlessMode ? new List<int>() : Rumors.Evaluate(BossIndex);
+        var rumors = EndlessMode ? new List<int>() : Rumors.Evaluate(CurrentBossData.RumorBoss);
         chips += rumors.Count * Rumors.ChipReward;
         Stats.chipsEarned += rumors.Count * Rumors.ChipReward;
+        // Conquistas (roupas e versos de carta)
+        var trophies = Achievements.OnBossBeaten(this);
 
         // Venceu a Dama pela primeira vez: libera o modo infinito.
-        bool unlockedNow = !EndlessMode && BossIndex >= 1 && !EndlessUnlocked;
+        bool unlockedNow = !EndlessMode && CurrentBossData.UnlocksEndless && !EndlessUnlocked;
         if (unlockedNow) EndlessUnlocked = true;
         string chipText = $"+{chips} " + Loc.Pick("CHIPS", "FICHAS", "FICHAS", "JETONS", "CHIPS", "FICHE");
         string sub = unlockedNow ? Loc.Pick("ENDLESS MODE UNLOCKED!", "MODO INFINITO LIBERADO!", "¡MODO INFINITO DESBLOQUEADO!",
@@ -772,6 +861,7 @@ public class GameManager : MonoBehaviour
                           "<size=60%>" + Rumors.Lore(rumor) + "</size>", 2.6f);
             yield return new WaitForSeconds(3f);
         }
+        yield return ShowTrophies(trophies);
 
         bool kingBeaten = !EndlessMode && BossIndex == config.Bosses.Count - 1;
         if (kingBeaten) Stats.rankedElapsed = Stats.Elapsed; // o ranking conta a run até o Rei
@@ -793,7 +883,7 @@ public class GameManager : MonoBehaviour
 
         if (EndlessMode)
         {
-            if (!Jokers.BeltFull) yield return PickJoker();
+            yield return PickJoker(); // (cinto cheio: só evoluções)
             yield return ui.Curtain.Cover();
             yield return Portal.Interstitial();
             StartCoroutine(BeginEndlessRound(EndlessRound + 1));
@@ -805,7 +895,7 @@ public class GameManager : MonoBehaviour
             // O Ás se revela depois do Rei (só com os 3 boatos do Rei descobertos)
             if (toAce) yield return PlayStory(StoryLines.AceReveal, true);
             // Escolhe um coringa novo antes do próximo chefe
-            if (!Jokers.BeltFull) yield return PickJoker();
+            yield return PickJoker(); // (cinto cheio: só evoluções)
             // Transição: cartas caem e cobrem a tela, a fase troca por baixo, e as cartas caem embora.
             yield return ui.Curtain.Cover();
             // Tela coberta pelas cartas, entre um chefe e outro: momento certo para o anúncio do portal.
@@ -836,15 +926,28 @@ public class GameManager : MonoBehaviour
         ui.ShowVictory(Stats, time, SelectedDifficulty);
     }
 
+    // Conquista nova: um aviso por conquista (com o prêmio).
+    public IEnumerator ShowTrophies(List<int> trophies)
+    {
+        if (trophies == null) yield break;
+        foreach (int a in trophies)
+        {
+            ui.ShowBanner(Loc.Pick("ACHIEVEMENT!", "CONQUISTA!", "¡LOGRO!", "SUCCÈS !", "ERFOLG!", "OBIETTIVO!"),
+                          $"{Achievements.Name(a)}\n<size=55%>{Achievements.RewardText(a)}</size>", 2.6f);
+            AudioManager.Sfx(config.SfxVictory, 0.6f, 0f, 1.2f);
+            yield return new WaitForSeconds(3f);
+        }
+    }
+
     // ===================== Fichas e coringas =====================
-    // Fichas por chefe vencido: Valete 15 · Dama 25 · Rei 40 · Ás 60 (infinito: 10 + 2 por rodada)
-    // + 1 por crítico na luta. EASY rende metade e HARDCORE 50% a mais.
+    // Fichas por chefe vencido: BossData.ChipReward (Valete 15 ... Ás 70; infinito: 10 + 2 por rodada)
+    // + 1 por crítico na luta. EASY rende metade e HARDCORE 50% a mais. Coringa Cofrinho: x1,5.
     private int AwardBossChips()
     {
-        int baseChips = EndlessMode ? 10 + 2 * EndlessRound
-            : BossIndex switch { 0 => 15, 1 => 25, 2 => 40, _ => 60 };
+        int baseChips = EndlessMode ? 10 + 2 * EndlessRound : CurrentBossData.ChipReward;
         baseChips += Rumors.Track.crits;
         float mult = SelectedDifficulty == Difficulty.Easy ? 0.5f : SelectedDifficulty == Difficulty.Hardcore ? 1.5f : 1f;
+        mult *= Jokers.ChipMultiplier;
         int chips = Mathf.Max(1, Mathf.RoundToInt(baseChips * mult));
         ProgressSave.AddChips(chips);
         Stats.chipsEarned += chips;
@@ -855,7 +958,7 @@ public class GameManager : MonoBehaviour
     private IEnumerator PickJoker()
     {
         var choices = JokerCatalog.RollChoices(3);
-        if (choices.Count == 0 || Jokers.BeltFull) yield break;
+        if (choices.Count == 0) yield break;
         bool wasLocked = InputLocked;
         InputLocked = true;
         JokerId? picked = null;
@@ -866,6 +969,8 @@ public class GameManager : MonoBehaviour
         // Ficha da Sorte: +1 redraw na hora
         if (picked.Value == JokerId.LuckyChip) { RedrawsLeft++; OnRedrawsChanged?.Invoke(); }
         if (picked.Value == JokerId.BigHand) Hand.MaxSize = config.MaxHandSize + Jokers.ExtraMaxHand;
+        // Tudo ou Nada: a vida máxima cai na hora (a vida atual não passa do novo máximo)
+        if (picked.Value == JokerId.AllIn) PlayerHealth.SetMax(PlayerMaxHp, false);
         yield return null; // o clique que escolheu não vira arremesso
         InputLocked = wasLocked;
     }

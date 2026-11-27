@@ -1,11 +1,39 @@
 using System;
 using UnityEngine;
 
+// Como o naipe do chefe é escolhido.
+//  Random    = sorteado quando ele surge (como era antes)
+//  Fixed     = sempre fixedSuit (Valete de Paus, Valete de Espadas)
+//  Phases    = muda de naipe cada vez que a vida zera, passando pelos 4 (Dama)
+//  PerAttack = o naipe gira junto com o dado e muda o efeito do ataque (Rei)
+public enum BossSuitMode { Random, Fixed, Phases, PerAttack }
+
 // Dados de um chefe (editáveis no Inspector do GameConfig).
 // [Serializable] = o Unity consegue salvar/mostrar esta classe dentro de outro asset.
 [Serializable]
 public class BossData
 {
+    [Header("Identidade (27/11)")]
+    [Tooltip("Nome mostrado no banner (ex.: \"TWIN JACKS\"). Vazio = displayName.")]
+    [SerializeField] private string bannerName = "";
+    [Tooltip("Id das cenas da história: \"boss0\" = Valete, \"twins\", \"elder\", \"boss1\" = Dama, \"boss2\" = Rei.")]
+    [SerializeField] private string storyId = "";
+    [Tooltip("Mural de boatos: 0 = Valete, 1 = Dama, 2 = Rei, -1 = sem boatos.")]
+    [SerializeField] private int rumorBoss = -1;
+    [Tooltip("Nível de força 0..2 (limite de investidas no HARDCORE e tom do som de entrada).")]
+    [SerializeField] private int tier;
+    [Tooltip("Fichas por vencer este chefe (antes do bônus de críticos e da dificuldade).")]
+    [SerializeField] private int chipReward = 15;
+    [Tooltip("Vencer este chefe libera o modo infinito.")]
+    [SerializeField] private bool unlocksEndless;
+
+    [Header("Naipe (27/11)")]
+    [SerializeField] private BossSuitMode suitMode = BossSuitMode.Random;
+    [SerializeField] private Suit fixedSuit = Suit.Clubs;
+    [Tooltip("Gêmeos: surge um 2º chefe igual, com este naipe e o seu próprio número.")]
+    [SerializeField] private bool twin;
+    [SerializeField] private Suit twinSuit = Suit.Diamonds;
+
     [SerializeField] private string displayName = "JACK";
     [SerializeField] private Sprite sprite;                       // usado quando não há sprites por naipe (ex.: coringa do tutorial)
     [Tooltip("Um sprite por naipe, na ordem do enum Suit: Clubs, Spades, Hearts, Diamonds. Cada vez que o chefe surge, sorteia um.")]
@@ -59,6 +87,47 @@ public class BossData
     [SerializeField] private Color platformColor = new Color32(0x10, 0x0E, 0x54, 0xFF);
 
     public string DisplayName => displayName;
+    public string BannerName => string.IsNullOrEmpty(bannerName) ? displayName : bannerName;
+    public string StoryId => storyId;
+    public int RumorBoss => rumorBoss;
+    public int Tier => tier;
+    public int ChipReward => chipReward;
+    public bool UnlocksEndless => unlocksEndless;
+    public BossSuitMode SuitMode => suitMode;
+    public Suit FixedSuit => fixedSuit;
+    public bool Twin => twin;
+    public Suit TwinSuit => twinSuit;
+    // Dama: quantas vezes a vida enche (uma por naipe)
+    public int Phases => suitMode == BossSuitMode.Phases ? 4 : 1;
+
+    // Naipe com que o chefe surge.
+    public Suit StartSuit() => suitMode == BossSuitMode.Fixed ? fixedSuit : SuitInfo.Random();
+
+    // Usado pelo menu de setup (Editor): monta a lista nova de chefes a partir dos antigos.
+    public BossData Clone() => (BossData)MemberwiseClone();
+    public BossData Identity(string name, string banner, string story, int rumor, int tier, int chips, bool unlocksEndless)
+    {
+        displayName = name; bannerName = banner; storyId = story; rumorBoss = rumor; this.tier = tier; chipReward = chips;
+        this.unlocksEndless = unlocksEndless;
+        return this;
+    }
+    public BossData SuitRule(BossSuitMode mode, Suit fixedSuit = Suit.Clubs, bool twin = false, Suit twinSuit = Suit.Diamonds)
+    {
+        suitMode = mode; this.fixedSuit = fixedSuit; this.twin = twin; this.twinSuit = twinSuit;
+        return this;
+    }
+    public BossData Stats(int hp, int min, int max, float idle, float telegraph, float move, float enrage, bool rerollHalf, float rerollEvery)
+    {
+        maxHp = hp; minNumber = min; maxNumber = max; idleTime = idle; telegraphTime = telegraph; moveSpeed = move;
+        this.enrage = enrage; rerollAtHalfHp = rerollHalf; rerollEverySeconds = rerollEvery;
+        return this;
+    }
+    public BossData Faces(params BossAttack[] faces) { dieFaces = faces; return this; }
+    public BossData Stage(int layout, Color bg, Color platform) { layoutIndex = layout; backgroundColor = bg; platformColor = platform; return this; }
+    public BossData Music(AudioClip intro, AudioClip loop) { musicIntro = intro; musicLoop = loop; return this; }
+    public BossData Bonus(float chance, params BossAttack[] attacks) { bonusAttackChance = chance; bonusAttacks = attacks; return this; }
+    public BossData ReRaise(float chance) { reRaiseChance = chance; return this; }
+    public BossData Multiply(float chance) { multiplyChance = chance; return this; }
     public Sprite Sprite => sprite;
     public bool HasSuits => suitSprites != null && suitSprites.Length == 4 && suitSprites[0] != null;
 

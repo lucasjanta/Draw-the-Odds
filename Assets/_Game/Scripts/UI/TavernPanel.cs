@@ -5,13 +5,15 @@ using UnityEngine;
 using UnityEngine.UI;
 
 // Taverna (menu principal): onde as fichas ganhas nas runs são gastas.
-//  - CORINGAS: libera coringas novos para o sorteio das runs;
-//  - VERSOS: cores para o verso das cartas (cosmético);
-//  - BOATOS: o mural com os 3 boatos de cada nobre (desafios) e o botão REVER HISTÓRIA.
+//  - CORINGAS: libera coringas novos (e evoluções) para o sorteio das runs;
+//  - GUARDA-ROUPA: chapéus, roupas e versos de carta do aldeão (com prévia);
+//  - BOATOS: o mural com os 3 boatos de cada nobre (desafios) e o botão REVER HISTÓRIA;
+//  - CONQUISTAS: desafios que liberam itens do guarda-roupa.
 // Tudo com toque/clique simples (sem arrastar), em cartões grandes para o celular.
 public class TavernPanel : MonoBehaviour
 {
-    private enum Tab { Jokers, Backs, Rumors }
+    private enum Tab { Jokers, Wardrobe, Rumors, Trophies }
+    private enum Closet { Hats, Outfits, Backs }
 
     private const float PanelW = 620f, PanelH = 336f;
     private static readonly Color Dim = new Color(1f, 1f, 1f, 0.45f);
@@ -20,8 +22,9 @@ public class TavernPanel : MonoBehaviour
     private GameConfig config;
     private RectTransform content;
     private TextMeshProUGUI chipsText, message;
-    private readonly Image[] tabFrames = new Image[3];
+    private readonly Image[] tabFrames = new Image[4];
     private Tab tab;
+    private Closet closet;
     private float messageUntil;
 
     public static TavernPanel Create(Transform parent, GameConfig config, Action onBack)
@@ -40,15 +43,15 @@ public class TavernPanel : MonoBehaviour
         t.chipsText.rectTransform.Place(new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-14f, -10f), new Vector2(220f, 22f));
 
         // Abas
-        string[] tabs = { "JOKERS", "CARD BACKS", "RUMORS" };
-        for (int i = 0; i < 3; i++)
+        string[] tabs = { "JOKERS", "WARDROBE", "RUMORS", "TROPHIES" };
+        for (int i = 0; i < tabs.Length; i++)
         {
             int index = i;
-            var b = UIFactory.Button("Tab" + i, panel.transform, tabs[i], new Vector2(150f, 22f), () => t.ShowTab((Tab)index), 10f);
-            b.GetComponent<RectTransform>().Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2((i - 1) * 160f, -40f), new Vector2(150f, 22f));
+            var b = UIFactory.Button("Tab" + i, panel.transform, tabs[i], new Vector2(136f, 22f), () => t.ShowTab((Tab)index), 10f);
+            b.GetComponent<RectTransform>().Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2((i - 1.5f) * 144f, -40f), new Vector2(136f, 22f));
             var frame = UIFactory.Image("Selected", b.transform, UIFactory.Gold);
             frame.raycastTarget = false;
-            frame.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, 0f), new Vector2(150f, 3f));
+            frame.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, 0f), new Vector2(136f, 3f));
             t.tabFrames[i] = frame;
         }
 
@@ -88,13 +91,14 @@ public class TavernPanel : MonoBehaviour
     {
         if (this == null || !gameObject.activeInHierarchy) return;
         chipsText.text = $"● {ProgressSave.Chips} " + Loc.Pick("CHIPS", "FICHAS", "FICHAS", "JETONS", "CHIPS", "FICHE");
-        for (int i = 0; i < 3; i++) tabFrames[i].enabled = i == (int)tab;
+        for (int i = 0; i < tabFrames.Length; i++) tabFrames[i].enabled = i == (int)tab;
         for (int i = content.childCount - 1; i >= 0; i--) Destroy(content.GetChild(i).gameObject);
         switch (tab)
         {
             case Tab.Jokers: BuildJokers(); break;
-            case Tab.Backs: BuildBacks(); break;
-            default: BuildRumors(); break;
+            case Tab.Wardrobe: BuildWardrobe(); break;
+            case Tab.Rumors: BuildRumors(); break;
+            default: BuildTrophies(); break;
         }
     }
 
@@ -145,27 +149,40 @@ public class TavernPanel : MonoBehaviour
     }
 
     // ===================== Coringas =====================
+    // 4 colunas × 5 linhas de cartões deitados: ícone, nome, efeito e preço.
     private void BuildJokers()
     {
-        const float w = 112f, h = 108f, gapX = 118f, gapY = 114f;
+        const float w = 146f, h = 42f, gapX = 150f, gapY = 45f;
         var all = JokerCatalog.All;
         for (int i = 0; i < all.Length; i++)
         {
             var def = all[i];
-            int col = i % 5, row = i / 5;
+            int col = i % 4, row = i / 4;
             bool owned = ProgressSave.JokerOwned(def.id);
             bool canBuy = ProgressSave.Chips >= def.cost;
-            var rt = Card("Joker" + i, new Vector2((col - 2) * gapX, -row * gapY), new Vector2(w, h),
+            var rt = Card("Joker" + i, new Vector2((col - 1.5f) * gapX, -row * gapY), new Vector2(w, h),
                           owned ? def.color : new Color(0.3f, 0.28f, 0.38f), () => BuyJoker(def));
-            var icon = JokerIcon.Create(rt, def, 28f);
-            icon.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -6f), new Vector2(28f, 28f));
+            var icon = JokerIcon.Create(rt, def, 26f);
+            icon.Place(new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(5f, 0f), new Vector2(26f, 26f));
             if (!owned) icon.GetComponent<Image>().color = new Color(0.04f, 0.03f, 0.08f, 1f);
-            Label(rt, def.Name, 8f, owned ? def.color : Dim, new Vector2(0f, -37f), new Vector2(w - 6f, 12f));
-            Label(rt, def.Desc, 7f, owned ? Color.white : Dim, new Vector2(0f, -51f), new Vector2(w - 10f, 36f), true);
+            var name = SmallText(rt, def.Name, 7f, owned ? def.color : Dim, new Vector2(35f, -4f), new Vector2(w - 70f, 10f), TextAlignmentOptions.TopLeft);
+            name.fontStyle = FontStyles.Bold;
+            var desc = SmallText(rt, def.Desc, 6f, owned ? Color.white : Dim, new Vector2(35f, -15f), new Vector2(w - 40f, 24f), TextAlignmentOptions.TopLeft);
+            desc.textWrappingMode = TextWrappingModes.Normal;
+            var fit = desc.GetComponent<TextFit>();
+            if (fit != null) Destroy(fit);
             string status = owned ? $"<color=#3CC86E>{Loc.T("OWNED")}</color>"
                                   : $"<color={(canBuy ? "#FFD447" : "#8A8098")}>● {def.cost}</color>";
-            Label(rt, status, 9f, Color.white, new Vector2(0f, -h + 15f), new Vector2(w - 6f, 13f));
+            SmallText(rt, status, 7f, Color.white, new Vector2(w - 36f, -4f), new Vector2(32f, 10f), TextAlignmentOptions.TopRight);
         }
+    }
+
+    private static TextMeshProUGUI SmallText(Transform parent, string text, float size, Color color, Vector2 topLeft, Vector2 box, TextAlignmentOptions align)
+    {
+        var t = UIFactory.Text("Text", parent, text, size, color, align).NoLoc();
+        t.raycastTarget = false;
+        t.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 1f), topLeft, box);
+        return t;
     }
 
     private void BuyJoker(JokerDef def)
@@ -178,39 +195,137 @@ public class TavernPanel : MonoBehaviour
                      $"{def.Name} rejoint le paquet !", $"{def.Name} ist jetzt im Deck!", $"{def.Name} entra nel mazzo!"), true);
     }
 
-    // ===================== Versos =====================
-    private void BuildBacks()
+    // ===================== Guarda-roupa =====================
+    // Esquerda: o aldeão grande (chapéu + roupa) e o verso escolhido. Direita: sub-abas e itens.
+    private void BuildWardrobe()
     {
-        const float w = 108f, h = 168f, gap = 116f;
-        for (int i = 0; i < CardBacks.All.Length; i++)
+        // Prévia
+        var frame = UIFactory.Image("Preview", content, new Color(0.25f, 0.22f, 0.32f));
+        frame.raycastTarget = false;
+        frame.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(-222f, -2f), new Vector2(150f, 220f));
+        var face = UIFactory.Image("Face", frame.transform, new Color(0.1f, 0.07f, 0.16f, 1f));
+        face.rectTransform.Stretch(2f);
+        face.raycastTarget = false;
+        var hero = UIFactory.Image("Villager", frame.transform, Color.white, VillagerPalette.Portrait(config, Wardrobe.SelectedHat, Wardrobe.SelectedOutfit));
+        hero.preserveAspect = true;
+        hero.raycastTarget = false;
+        hero.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -6f), new Vector2(150f, 111f));
+        var back = UIFactory.Image("Back", frame.transform, CardBacks.Tint, config.CardBack);
+        back.preserveAspect = true;
+        back.raycastTarget = false;
+        back.rectTransform.Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 26f), new Vector2(54f, 74f));
+        SmallText(frame.transform, $"{Wardrobe.Hats[Wardrobe.SelectedHat].Name}\n{Wardrobe.Outfits[Wardrobe.SelectedOutfit].Name}", 6.5f, Color.white,
+                  new Vector2(4f, -118f), new Vector2(142f, 20f), TextAlignmentOptions.Top);
+        SmallText(frame.transform, Loc.T(CardBacks.All[Mathf.Clamp(ProgressSave.SelectedBack, 0, CardBacks.All.Length - 1)].name), 6.5f, UIFactory.Gold,
+                  new Vector2(4f, -206f), new Vector2(142f, 10f), TextAlignmentOptions.Top);
+
+        // Sub-abas
+        string[] names = { "HATS", "OUTFITS", "CARD BACKS" };
+        for (int i = 0; i < names.Length; i++)
         {
             int index = i;
-            var back = CardBacks.All[i];
-            bool owned = ProgressSave.BackOwned(i);
-            bool equipped = owned && ProgressSave.SelectedBack == i;
-            var rt = Card("Back" + i, new Vector2((i - 2) * gap, -10f), new Vector2(w, h), equipped ? UIFactory.Gold : new Color(0.3f, 0.28f, 0.38f), () => BuyBack(index));
-            var img = UIFactory.Image("Art", rt, back.tint, config.CardBack);
+            var b = UIFactory.Button("Closet" + i, content, names[i], new Vector2(122f, 18f), () => { closet = (Closet)index; Refresh(); }, 9f);
+            b.GetComponent<RectTransform>().Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(-84f + i * 130f, -2f), new Vector2(122f, 18f));
+            var label = b.transform.Find("Label")?.GetComponent<TextMeshProUGUI>();
+            if (label != null) label.color = i == (int)closet ? UIFactory.Gold : new Color(1f, 1f, 1f, 0.55f);
+        }
+
+        // Itens (7 por linha)
+        int count = closet == Closet.Hats ? Wardrobe.Hats.Length : closet == Closet.Outfits ? Wardrobe.Outfits.Length : CardBacks.All.Length;
+        const float w = 60f, h = 192f, gap = 64f;
+        for (int i = 0; i < count; i++)
+        {
+            int index = i;
+            bool owned, equipped;
+            string name;
+            int cost, achievement;
+            Sprite art;
+            Color tint = Color.white;
+            switch (closet)
+            {
+                case Closet.Hats:
+                    var hat = Wardrobe.Hats[i];
+                    owned = Wardrobe.HatOwned(i); equipped = owned && Wardrobe.SelectedHat == i;
+                    name = hat.Name; cost = hat.cost; achievement = hat.achievement;
+                    art = VillagerPalette.Portrait(config, i, Wardrobe.SelectedOutfit);
+                    break;
+                case Closet.Outfits:
+                    var outfit = Wardrobe.Outfits[i];
+                    owned = Wardrobe.OutfitOwned(i); equipped = owned && Wardrobe.SelectedOutfit == i;
+                    name = outfit.Name; cost = outfit.cost; achievement = outfit.achievement;
+                    art = VillagerPalette.Portrait(config, Wardrobe.SelectedHat, i);
+                    break;
+                default:
+                    var cb = CardBacks.All[i];
+                    owned = ProgressSave.BackOwned(i); equipped = owned && ProgressSave.SelectedBack == i;
+                    name = Loc.T(cb.name); cost = cb.cost; achievement = cb.achievement;
+                    art = config.CardBack; tint = cb.tint;
+                    break;
+            }
+            var rt = Card("Item" + i, new Vector2(-150f + 36f + i * gap, -26f), new Vector2(w, h),
+                          equipped ? UIFactory.Gold : new Color(0.3f, 0.28f, 0.38f), () => WardrobeClick(index));
+            var img = UIFactory.Image("Art", rt, owned ? tint : new Color(tint.r * 0.35f, tint.g * 0.35f, tint.b * 0.4f, 1f), art);
             img.preserveAspect = true;
             img.raycastTarget = false;
-            img.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -8f), new Vector2(72f, 100f));
-            Label(rt, Loc.T(back.name), 9f, owned ? Color.white : Dim, new Vector2(0f, -114f), new Vector2(w - 6f, 13f));
+            img.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -8f), closet == Closet.Backs ? new Vector2(44f, 62f) : new Vector2(56f, 84f));
+            var label = SmallText(rt, name, 6f, owned ? Color.white : Dim, new Vector2(3f, -100f), new Vector2(w - 6f, 30f), TextAlignmentOptions.Top);
+            label.textWrappingMode = TextWrappingModes.Normal;
+            var fit = label.GetComponent<TextFit>();
+            if (fit != null) Destroy(fit);
             string status = equipped ? $"<color=#FFD447>{Loc.T("EQUIPPED")}</color>"
                           : owned ? $"<color=#3CC86E>{Loc.T("OWNED")}</color>"
-                          : $"<color={(ProgressSave.Chips >= back.cost ? "#FFD447" : "#8A8098")}>● {back.cost}</color>";
-            Label(rt, status, 9f, Color.white, new Vector2(0f, -136f), new Vector2(w - 6f, 13f));
+                          : achievement >= 0 ? $"<color=#B57CFF>{Loc.T("TROPHIES")}</color>"
+                          : $"<color={(ProgressSave.Chips >= cost ? "#FFD447" : "#8A8098")}>● {cost}</color>";
+            var st = SmallText(rt, status, 6f, Color.white, new Vector2(3f, -h + 16f), new Vector2(w - 6f, 10f), TextAlignmentOptions.Top);
+            st.textWrappingMode = TextWrappingModes.NoWrap;
         }
     }
 
-    private void BuyBack(int index)
+    // Clique num item: tem = veste · não tem = compra (fichas) · de conquista = diz o que fazer.
+    private void WardrobeClick(int i)
     {
-        if (!ProgressSave.BackOwned(index))
+        bool owned;
+        int cost, achievement;
+        switch (closet)
         {
-            if (!ProgressSave.SpendChips(CardBacks.All[index].cost)) { Say(NotEnough); return; }
-            ProgressSave.UnlockBack(index);
+            case Closet.Hats: owned = Wardrobe.HatOwned(i); cost = Wardrobe.Hats[i].cost; achievement = Wardrobe.Hats[i].achievement; break;
+            case Closet.Outfits: owned = Wardrobe.OutfitOwned(i); cost = Wardrobe.Outfits[i].cost; achievement = Wardrobe.Outfits[i].achievement; break;
+            default: owned = ProgressSave.BackOwned(i); cost = CardBacks.All[i].cost; achievement = CardBacks.All[i].achievement; break;
+        }
+        if (!owned)
+        {
+            if (achievement >= 0) { Say(Loc.T("ACHIEVEMENT") + ": " + Achievements.Desc(achievement)); return; }
+            if (!ProgressSave.SpendChips(cost)) { Say(NotEnough); return; }
+            if (closet == Closet.Hats) ProgressSave.BuyHat(i);
+            else if (closet == Closet.Outfits) ProgressSave.BuyOutfit(i);
+            else ProgressSave.UnlockBack(i);
             AudioManager.Sfx(config.SfxPowerUp, 0.9f, 0f);
         }
         else AudioManager.Ui(config.SfxUiClick);
-        ProgressSave.SelectedBack = index;
+        if (closet == Closet.Hats) ProgressSave.SelectedHat = i;
+        else if (closet == Closet.Outfits) ProgressSave.SelectedOutfit = i;
+        else ProgressSave.SelectedBack = i;
+    }
+
+    // ===================== Conquistas =====================
+    private void BuildTrophies()
+    {
+        for (int a = 0; a < Achievements.Count; a++)
+        {
+            bool done = Achievements.Has(a);
+            var row = UIFactory.Image("Trophy" + a, content, done ? new Color(0.55f, 0.42f, 0.12f) : new Color(0.25f, 0.22f, 0.32f));
+            row.raycastTarget = false;
+            row.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -a * 37f), new Vector2(560f, 34f));
+            var face = UIFactory.Image("Face", row.transform, new Color(0.1f, 0.07f, 0.16f, 1f));
+            face.rectTransform.Stretch(1f);
+            face.raycastTarget = false;
+            SmallText(row.transform, done ? "<color=#FFD447>●</color>" : "<color=#8A8098>?</color>", 14f, Color.white, new Vector2(8f, -6f), new Vector2(20f, 20f), TextAlignmentOptions.Center);
+            var name = SmallText(row.transform, Achievements.Name(a), 9f, done ? UIFactory.Gold : Color.white, new Vector2(34f, -4f), new Vector2(250f, 12f), TextAlignmentOptions.TopLeft);
+            name.fontStyle = FontStyles.Bold;
+            SmallText(row.transform, Achievements.Desc(a), 7f, done ? Color.white : Dim, new Vector2(34f, -19f), new Vector2(260f, 11f), TextAlignmentOptions.TopLeft);
+            SmallText(row.transform, Achievements.RewardText(a), 7f, done ? new Color32(0x3C, 0xC8, 0x6E, 0xFF) : (Color)new Color32(0xB5, 0x7C, 0xFF, 0xFF),
+                      new Vector2(300f, -12f), new Vector2(254f, 11f), TextAlignmentOptions.TopRight);
+        }
     }
 
     // ===================== Mural de Boatos =====================
@@ -264,12 +379,14 @@ public class TavernPanel : MonoBehaviour
         replay.GetComponent<RectTransform>().Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(225f, -176f), new Vector2(130f, 20f));
     }
 
-    // Debug (ponte): call TavernPanel.DebugTab 0|1|2
+    // Debug (ponte): call TavernPanel.DebugTab 0|1|2|3 (guarda-roupa: "1 0" chapéus, "1 1" roupas, "1 2" versos)
     public static string DebugTab(string index)
     {
         var t = FindAnyObjectByType<TavernPanel>();
         if (t == null) return "no tavern";
-        t.ShowTab((Tab)int.Parse(index));
+        var parts = index.Split(' ');
+        if (parts.Length > 1) t.closet = (Closet)int.Parse(parts[1]);
+        t.ShowTab((Tab)int.Parse(parts[0]));
         return "tab " + index;
     }
 }

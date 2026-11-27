@@ -23,14 +23,8 @@ public static class SuitInfo
         _ => "♦",
     };
 
-    // O que cada naipe faz ao acertar o chefe (mostrado no tutorial da tela inicial).
-    public static string Effect(Suit suit) => suit switch
-    {
-        Suit.Clubs => "normal damage",
-        Suit.Spades => "x1.5 damage",
-        Suit.Hearts => "heals you instead",
-        _ => "damage + draw a card",
-    };
+    // Desde 27/11 todos os naipes dão o mesmo dano; o bônus de cada um vem de um coringa.
+    public static string Effect(Suit suit) => "same damage (jokers add bonuses)";
 
     // "Tinta" impressa nas cartas (mesma paleta da arte): preto para ♠♣, vermelho para ♥♦.
     // Usada nos números desenhados por cima das cartas; GetColor continua para efeitos e HUD.

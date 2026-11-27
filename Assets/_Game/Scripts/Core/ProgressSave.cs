@@ -12,6 +12,11 @@ public static class ProgressSave
     private const string BacksKey = "dto_backs_owned";     // bits: 1 por verso de carta
     private const string BackKey = "dto_back";             // verso escolhido
     private const string EndingsKey = "dto_endings";       // bits: 1 = trono, 2 = livre
+    private const string AchievementsKey = "dto_achievements"; // bits: 1 por conquista (Achievements)
+    private const string HatsKey = "dto_hats_owned";       // bits: chapéus comprados (Wardrobe.Hats)
+    private const string OutfitsKey = "dto_outfits_owned"; // bits: roupas compradas (Wardrobe.Outfits)
+    private const string HatKey = "dto_hat";               // chapéu escolhido
+    private const string OutfitKey = "dto_outfit";         // roupa escolhida
 
     public static event Action OnChanged;
 
@@ -57,11 +62,19 @@ public static class ProgressSave
         }
     }
 
-    public static bool JokerOwned(JokerId id) => GetBit(JokersKey, (int)id, StarterMask);
+    // Coringa de custo 0 vale sempre (os iniciais novos aparecem mesmo para quem já tinha save antigo).
+    public static bool JokerOwned(JokerId id) => JokerCatalog.Get(id).cost == 0 || GetBit(JokersKey, (int)id, StarterMask);
     public static void UnlockJoker(JokerId id) => SetBit(JokersKey, (int)id, StarterMask);
 
     // ===================== Versos de carta (cosmético) =====================
-    public static bool BackOwned(int index) => index == 0 || GetBit(BacksKey, index);
+    // Verso de conquista: vale quando a conquista foi feita (não se compra).
+    public static bool BackOwned(int index)
+    {
+        if (index == 0) return true;
+        if (index > 0 && index < CardBacks.All.Length && CardBacks.All[index].achievement >= 0)
+            return Achievements.Has(CardBacks.All[index].achievement);
+        return GetBit(BacksKey, index);
+    }
     public static void UnlockBack(int index) => SetBit(BacksKey, index);
 
     public static int SelectedBack
@@ -69,6 +82,28 @@ public static class ProgressSave
         get => PlayerPrefs.GetInt(BackKey, 0);
         set { PlayerPrefs.SetInt(BackKey, value); PlayerPrefs.Save(); OnChanged?.Invoke(); }
     }
+
+    // ===================== Guarda-roupa (chapéus e roupas) =====================
+    public static bool HatBought(int i) => GetBit(HatsKey, i);
+    public static void BuyHat(int i) => SetBit(HatsKey, i);
+    public static bool OutfitBought(int i) => GetBit(OutfitsKey, i);
+    public static void BuyOutfit(int i) => SetBit(OutfitsKey, i);
+
+    public static int SelectedHat
+    {
+        get => PlayerPrefs.GetInt(HatKey, 0);
+        set { PlayerPrefs.SetInt(HatKey, value); PlayerPrefs.Save(); OnChanged?.Invoke(); }
+    }
+
+    public static int SelectedOutfit
+    {
+        get => PlayerPrefs.GetInt(OutfitKey, 0);
+        set { PlayerPrefs.SetInt(OutfitKey, value); PlayerPrefs.Save(); OnChanged?.Invoke(); }
+    }
+
+    // ===================== Conquistas =====================
+    public static bool AchievementDone(int a) => GetBit(AchievementsKey, a);
+    public static void MarkAchievement(int a) => SetBit(AchievementsKey, a);
 
     // ===================== Boatos (Mural) =====================
     public static bool RumorFound(int index) => GetBit(RumorsKey, index);
@@ -93,7 +128,8 @@ public static class ProgressSave
 
     public static string DebugReset()
     {
-        foreach (var k in new[] { ChipsKey, JokersKey, RumorsKey, BacksKey, BackKey, EndingsKey }) PlayerPrefs.DeleteKey(k);
+        foreach (var k in new[] { ChipsKey, JokersKey, RumorsKey, BacksKey, BackKey, EndingsKey, AchievementsKey, HatsKey, OutfitsKey, HatKey, OutfitKey })
+            PlayerPrefs.DeleteKey(k);
         PlayerPrefs.Save();
         OnChanged?.Invoke();
         return "progress reset";

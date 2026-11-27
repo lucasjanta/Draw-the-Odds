@@ -1,16 +1,23 @@
 using System;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Painel do ranking global (top 10). Dois usos:
+// Painel do ranking global (top 10). Cada linha: posição, o aldeão (chapéu + roupa), nome, pontos, tempo,
+// cartas, críticos, mortes e os coringas usados. Tocar numa linha mostra os status completos da run.
+// Embaixo: "SEU RECORDE" (melhor run do jogador neste modo, com a posição). Dois usos:
 //  - fim do jogo (vitória): mostra a run do jogador e, se ela entra no top 10, pede o nome e envia;
 //  - menu principal (botão RANKING): só mostra a lista.
 public class LeaderboardPanel : MonoBehaviour
 {
-    private static readonly float[] ColumnX = { 14f, 36f, 178f, 238f, 294f, 350f, 406f, 462f, 520f };
-    private static readonly string[] Headers = { "#", "NAME", "SCORE", "TIME", "CARDS", "CRITS", "FUSES", "DMG", "DEATHS" };
-    private const int Columns = 9;
+    private static readonly float[] ColumnX = { 12f, 58f, 176f, 232f, 280f, 326f, 372f, 422f };
+    private static readonly string[] Headers = { "#", "NAME", "SCORE", "TIME", "CARDS", "CRITS", "DEATHS", "JOKERS" };
+    private const int Columns = 7;           // colunas de texto (a última, JOKERS, são ícones)
+    private const int BestRow = LeaderboardClient.Size + 1;
+    private Image[] portraits;
+    private RectTransform[] jokerSlots;
+    private LeaderboardClient.Entry[] rowEntries;
     private static readonly Color Highlight = new Color32(0xFF, 0xD4, 0x47, 0xFF);
 
     private TextMeshProUGUI title, runLine, status;
@@ -61,26 +68,50 @@ public class LeaderboardPanel : MonoBehaviour
             p.tabButtons[i] = b;
         }
 
-        p.status = UIFactory.Text("Status", t, "", 8f, new Color(1f, 1f, 1f, 0.75f), TextAlignmentOptions.Center);
-        p.status.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -66f), new Vector2(580f, 12f));
+        p.status = UIFactory.Text("Status", t, "", 7f, new Color(1f, 1f, 1f, 0.75f), TextAlignmentOptions.Center);
+        p.status.rectTransform.Place(new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -62f), new Vector2(580f, 18f));
 
-        // Tabela: cabeçalho + 10 linhas
-        p.cells = new TextMeshProUGUI[LeaderboardClient.Size + 1, Columns];
-        for (int r = 0; r <= LeaderboardClient.Size; r++)
+        // Tabela: cabeçalho + 10 linhas + "SEU RECORDE"
+        p.cells = new TextMeshProUGUI[BestRow + 1, Columns];
+        p.portraits = new Image[BestRow + 1];
+        p.jokerSlots = new RectTransform[BestRow + 1];
+        p.rowEntries = new LeaderboardClient.Entry[BestRow + 1];
+        var headJokers = UIFactory.Text("HeadJokers", t, Headers[Columns], 8f, new Color(0.6f, 0.6f, 0.8f));
+        headJokers.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(ColumnX[Columns], -80f), new Vector2(140f, 12f));
+        for (int r = 0; r <= BestRow; r++)
         {
-            float y = -84f - r * 15f;
+            float y = r == BestRow ? -251f : -80f - r * 15f;
+            if (r > 0)
+            {
+                // Linha inteira clicável: mostra os status completos da run no rodapé
+                int rowIndex = r;
+                var hit = UIFactory.Image("Row" + r, t, r == BestRow ? new Color(1f, 0.83f, 0.28f, 0.14f) : new Color(1f, 1f, 1f, r % 2 == 0 ? 0.05f : 0f));
+                hit.raycastTarget = true;
+                hit.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(8f, y + 1f), new Vector2(576f, 14f));
+                var button = hit.gameObject.AddComponent<Button>();
+                button.transition = Selectable.Transition.None;
+                button.onClick.AddListener(() => p.ShowDetails(rowIndex));
+                var portrait = UIFactory.Image("Portrait", t, Color.white);
+                portrait.preserveAspect = true;
+                portrait.raycastTarget = false;
+                portrait.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(32f, y + 3f), new Vector2(22f, 17f));
+                portrait.enabled = false;
+                p.portraits[r] = portrait;
+                p.jokerSlots[r] = UIFactory.Rect("Jokers" + r, t).Place(new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(ColumnX[Columns], y), new Vector2(160f, 12f));
+            }
             for (int c = 0; c < Columns; c++)
             {
                 Color color = r == 0 ? new Color(0.6f, 0.6f, 0.8f) : Color.white;
                 var cell = UIFactory.Text($"Cell{r}_{c}", t, r == 0 ? Headers[c] : "", 8f, color);
                 if (r > 0) cell.NoLoc(); // nomes dos jogadores ficam como foram digitados
-                cell.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(ColumnX[c], y), new Vector2(140f, 12f));
+                cell.raycastTarget = false;
+                cell.rectTransform.Place(new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(ColumnX[c], y), new Vector2(c == 1 ? 112f : 60f, 12f));
                 p.cells[r, c] = cell;
             }
         }
 
-        var close = UIFactory.Button("Close", t, closeLabel, new Vector2(140f, 22f), onClose, 11f);
-        close.GetComponent<RectTransform>().Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 8f), new Vector2(140f, 22f));
+        var close = UIFactory.Button("Close", t, closeLabel, new Vector2(140f, 20f), onClose, 11f);
+        close.GetComponent<RectTransform>().Place(new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 5f), new Vector2(140f, 20f));
 
         panel.gameObject.SetActive(false);
         return p;
@@ -169,7 +200,11 @@ public class LeaderboardPanel : MonoBehaviour
         if (LeaderboardClient.Mode != ModeId) return; // resposta de outra aba (atrasada)
         title.text = ListTitle;
         FillRows();
-        if (run == null) { status.text = LeaderboardClient.Entries.Count == 0 ? "NO RUNS YET. BE THE FIRST!" : ""; return; }
+        if (run == null)
+        {
+            status.text = LeaderboardClient.Entries.Count == 0 ? "NO RUNS YET. BE THE FIRST!" : Loc.T("TAP A ROW TO SEE THE RUN");
+            return;
+        }
 
         int rank = LeaderboardClient.RankFor(run.score);
         if (rank > 0)
@@ -209,25 +244,64 @@ public class LeaderboardPanel : MonoBehaviour
     private void FillRows()
     {
         var list = LeaderboardClient.Entries;
-        for (int r = 1; r <= LeaderboardClient.Size; r++)
+        for (int r = 1; r <= BestRow; r++)
         {
-            var e = r - 1 < list.Count ? list[r - 1] : null;
+            LeaderboardClient.Entry e;
+            if (r == BestRow) e = LeaderboardClient.Best;
+            else e = r - 1 < list.Count ? list[r - 1] : null;
+            rowEntries[r] = e;
+            string rank = r == BestRow ? (e != null && e.rank > 0 ? "#" + e.rank : "") : r.ToString();
             string[] values = e == null
-                ? new[] { r.ToString(), "-", "", "", "", "", "", "", "" }
+                ? new[] { r == BestRow ? "" : rank, r == BestRow ? Loc.T("YOUR BEST") + ": -" : "-", "", "", "", "", "" }
                 : new[]
                 {
-                    r.ToString(), e.name, IsEndless ? (e.score / LeaderboardClient.EndlessPerBoss).ToString() : e.score.ToString(),
-                    FormatTime(e.time_sec), e.cards_thrown.ToString(),
-                    e.criticals.ToString(), e.fusions.ToString(), e.damage_taken.ToString(), e.deaths.ToString(),
+                    rank, r == BestRow ? $"{Loc.T("YOUR BEST")}: {e.name}" : e.name,
+                    IsEndless ? (e.score / LeaderboardClient.EndlessPerBoss).ToString() : e.score.ToString(),
+                    FormatTime(e.time_sec), e.cards_thrown.ToString(), e.criticals.ToString(), e.deaths.ToString(),
                 };
             bool mine = e != null && !string.IsNullOrEmpty(highlightName) &&
                         string.Equals(e.name, highlightName, StringComparison.OrdinalIgnoreCase);
             for (int c = 0; c < Columns; c++)
             {
                 cells[r, c].text = values[c];
-                cells[r, c].color = mine ? Highlight : (e == null ? new Color(1f, 1f, 1f, 0.3f) : Color.white);
+                cells[r, c].color = mine || r == BestRow ? Highlight : (e == null ? new Color(1f, 1f, 1f, 0.3f) : Color.white);
             }
+
+            // Aldeão da run (chapéu + roupa) e os coringas
+            var config = GameManager.Instance != null ? GameManager.Instance.Config : null;
+            var portrait = portraits[r];
+            Sprite sprite = null;
+            if (e != null && config != null && !string.IsNullOrEmpty(e.outfit))
+            {
+                Wardrobe.Parse(e.outfit, out int hat, out int outfit, out _);
+                sprite = VillagerPalette.Portrait(config, hat, outfit);
+            }
+            portrait.sprite = sprite;
+            portrait.enabled = sprite != null;
+
+            var slot = jokerSlots[r];
+            for (int i = slot.childCount - 1; i >= 0; i--) Destroy(slot.GetChild(i).gameObject);
+            if (e == null) continue;
+            var jokers = e.JokerList();
+            for (int k = 0; k < jokers.Count; k++)
+                JokerIcon.Create(slot, JokerCatalog.Get(jokers[k]), 12f)
+                    .Place(new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(k * 14f, 0f), new Vector2(12f, 12f));
         }
+    }
+
+    // Tocar numa linha: status completos daquela run no rodapé (com os nomes dos coringas).
+    private void ShowDetails(int row)
+    {
+        var e = rowEntries[row];
+        if (e == null) return;
+        string W(string en) => Loc.T(en);
+        var names = new List<string>();
+        foreach (var j in e.JokerList()) names.Add(JokerCatalog.Get(j).Name);
+        string line = $"<color=#FFD447>{e.name}</color>   {W("TIME")} {FormatTime(e.time_sec)}   {W("CARDS")} {e.cards_thrown}   {W("CRITS")} {e.criticals}" +
+                      $"   {W("FUSES")} {e.fusions}   {W("DMG")} {e.damage_taken}   {W("DEATHS")} {e.deaths}";
+        if (e.bosses > 0) line += $"   {W("BOSSES")} {e.bosses}";
+        if (names.Count > 0) line += "\n<color=#B57CFF>" + string.Join(" · ", names) + "</color>";
+        status.text = line;
     }
 
     public static string FormatTime(int seconds) => $"{seconds / 60}:{seconds % 60:00}";

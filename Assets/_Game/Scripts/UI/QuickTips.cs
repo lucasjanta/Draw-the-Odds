@@ -160,12 +160,12 @@ public class QuickTips : MonoBehaviour
                                $"{Y(N(GameKey.SlotA))} / {Y(N(GameKey.SlotB))} (oder ziehen) 2 Karten ablegen   {Y("KLICK")} verschmelzen",
                                $"{Y(N(GameKey.SlotA))} / {Y(N(GameKey.SlotB))} (o trascina) metti 2 carte   {Y("CLIC")} fondi");
             case "suits":
-                return Loc.Pick($"{C(Suit.Spades)} x1.5 damage   {C(Suit.Hearts)} heals you   {C(Suit.Diamonds)} +1 card",
-                                $"{C(Suit.Spades)} dano x1.5   {C(Suit.Hearts)} cura você   {C(Suit.Diamonds)} +1 carta",
-                                $"{C(Suit.Spades)} daño x1.5   {C(Suit.Hearts)} te cura   {C(Suit.Diamonds)} +1 carta",
-                                $"{C(Suit.Spades)} dégâts x1.5   {C(Suit.Hearts)} te soigne   {C(Suit.Diamonds)} +1 carte",
-                                $"{C(Suit.Spades)} Schaden x1.5   {C(Suit.Hearts)} heilt dich   {C(Suit.Diamonds)} +1 Karte",
-                                $"{C(Suit.Spades)} danni x1.5   {C(Suit.Hearts)} ti cura   {C(Suit.Diamonds)} +1 carta");
+                return Loc.Pick($"Every suit deals the same damage. Suit JOKERS add bonuses ({C(Suit.Spades)} {C(Suit.Hearts)} {C(Suit.Diamonds)} {C(Suit.Clubs)})",
+                                $"Todo naipe dá o mesmo dano. CORINGAS de naipe dão bônus ({C(Suit.Spades)} {C(Suit.Hearts)} {C(Suit.Diamonds)} {C(Suit.Clubs)})",
+                                $"Todos los palos hacen el mismo daño. Los COMODINES de palo dan bonus ({C(Suit.Spades)} {C(Suit.Hearts)} {C(Suit.Diamonds)} {C(Suit.Clubs)})",
+                                $"Toutes les couleurs font les mêmes dégâts. Les JOKERS de couleur donnent des bonus ({C(Suit.Spades)} {C(Suit.Hearts)} {C(Suit.Diamonds)} {C(Suit.Clubs)})",
+                                $"Alle Farben machen gleich viel Schaden. Farb-JOKER geben Boni ({C(Suit.Spades)} {C(Suit.Hearts)} {C(Suit.Diamonds)} {C(Suit.Clubs)})",
+                                $"Tutti i semi fanno gli stessi danni. I JOLLY di seme danno bonus ({C(Suit.Spades)} {C(Suit.Hearts)} {C(Suit.Diamonds)} {C(Suit.Clubs)})");
             case "redraw":
             {
                 // No toque, o botão é a carta com setas curvas (em cima do pulo)

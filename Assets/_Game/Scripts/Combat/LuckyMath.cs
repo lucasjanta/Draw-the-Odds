@@ -7,10 +7,12 @@ public struct HitResult
 {
     public Card card;
     public int distance;
-    public int amount;       // dano (ou cura, se isHeal)
-    public bool isHeal;
+    public int amount;       // dano no chefe
+    public bool isHeal;      // (antigo: Copas curava em vez de dar dano; desde 27/11 é sempre false)
+    public int healAmount;   // ♥ com coringa: cura o jogador além do dano
     public bool isCritical;
-    public int bonusCards;   // ♦ compra cartas
+    public int bonusCards;   // ♦ com coringa: compra cartas
+    public int bonusChips;   // ♦ Mina de Ouro: fichas por acerto
     public HintDirection hint;
     public bool defeated;
     // Coringas e RAISE (preenchidos pelo BossController)
@@ -41,11 +43,18 @@ public static class LuckyMath
         return 0;
     }
 
-    // ♠ x1,5 (x2 com o coringa Espada Afiada)
+    // Todos os naipes dão o mesmo dano. Os bônus vêm dos coringas:
+    // ♠ x1,5 / x2 (Espada Afiada / Real) · ♣ +1 / +2 (Trevo / 4 Folhas) · Tudo ou Nada +1 · Ás no Bolso +3 no crítico.
     public static float SuitMultiplier(Suit suit) => suit == Suit.Spades ? Jokers.SpadeMultiplier : 1f;
 
-    public static int FinalDamage(int baseDamage, Suit suit) =>
-        Mathf.CeilToInt(baseDamage * SuitMultiplier(suit));
+    public static int FinalDamage(int baseDamage, Suit suit, bool critical = false)
+    {
+        if (baseDamage <= 0) return 0; // longe do número: nenhum coringa salva
+        int dmg = Mathf.CeilToInt(baseDamage * SuitMultiplier(suit));
+        if (suit == Suit.Clubs) dmg += Jokers.ClubBonus;
+        if (critical) dmg += Jokers.CritBonus;
+        return dmg + Jokers.FlatBonus;
+    }
 
     public static HintDirection Hint(int cardValue, int secret)
     {
@@ -72,12 +81,18 @@ public static class LuckyMath
             distance = dist,
             isCritical = dist == 0,
             hint = Hint(card.value, secret),
-            isHeal = card.suit == Suit.Hearts,
             nearMiss = nearMiss,
         };
-        r.amount = r.isHeal ? baseDmg : FinalDamage(baseDmg, card.suit);
-        if (r.isHeal && r.amount > 0) r.amount += Jokers.ExtraHeal; // Coração de Ouro
-        if (card.suit == Suit.Diamonds && baseDmg > 0) r.bonusCards = (r.isCritical ? 2 : 1) + Jokers.ExtraDiamondCards;
+        r.amount = FinalDamage(baseDmg, card.suit, r.isCritical || nearMiss);
+        if (baseDmg > 0)
+        {
+            if (card.suit == Suit.Hearts) r.healAmount = Jokers.HeartHeal;                 // Coração de Ouro / de Leão
+            if (card.suit == Suit.Diamonds && Jokers.DiamondCards > 0)
+            {
+                r.bonusCards = Jokers.DiamondCards + (r.isCritical ? 1 : 0);              // Bolsa / Mina de Ouro
+                r.bonusChips = Jokers.DiamondChips;
+            }
+        }
         return r;
     }
 

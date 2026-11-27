@@ -69,6 +69,7 @@ public class GameUI : MonoBehaviour
         PlayerHUD.Create(safe, gm);
         JokerBelt.Create(safe, gm); // coringas da run, embaixo do painel do player
         BossHUD.Create(safe, gm);
+        BossHUD.Create(safe, gm, 1); // 2º painel: só aparece com os Valetes Gêmeos
         FusionPanel.Create(root, gm);
 
         // Banner central ("BOSS 1/3 — JACK")
@@ -314,6 +315,9 @@ public class GameUI : MonoBehaviour
             damage_taken = gm.Stats.damageTaken,
             deaths = gm.Stats.deaths,
             score = LeaderboardClient.EndlessScore(gm.EndlessBeaten, time),
+            outfit = Wardrobe.Code,
+            jokers = Jokers.Code,
+            bosses = gm.EndlessBeaten,
         };
         endlessBoard.ShowEndless(run);
     }
@@ -340,6 +344,9 @@ public class GameUI : MonoBehaviour
             damage_taken = stats.damageTaken,
             deaths = stats.deaths,
             score = LeaderboardClient.Score(time, stats.cardsThrown, stats.criticals),
+            outfit = Wardrobe.Code,
+            jokers = Jokers.Code,
+            bosses = Mathf.Max(stats.bossesBeaten, gm.Config.Bosses.Count),
         };
         victoryBoard.Show(run, difficulty);
         ((RectTransform)victoryBoard.transform).anchoredPosition = new Vector2(0f, -22f);

@@ -10,6 +10,7 @@ public class PauseMenu : MonoBehaviour
     private GameObject mainPanel;
     private Button skipTutorial;
     private OptionsPanel options;
+    private RunStatsPanel stats;   // status da run ao lado dos botões
 
     public bool OptionsOpen => options.gameObject.activeSelf;
 
@@ -23,7 +24,9 @@ public class PauseMenu : MonoBehaviour
         menu.gm = gm;
 
         var panel = UIFactory.MenuPanel("Main", dim.transform, new Vector2(220f, 182f));
+        panel.rectTransform.anchoredPosition = new Vector2(-165f, 0f);
         menu.mainPanel = panel.gameObject;
+        menu.stats = RunStatsPanel.Create(dim.transform, new Vector2(110f, 0f));
 
         var title = UIFactory.Text("Title", panel.transform, "PAUSED", 22f, UIFactory.Gold, TextAlignmentOptions.Center);
         title.fontStyle = FontStyles.Bold;
@@ -54,6 +57,7 @@ public class PauseMenu : MonoBehaviour
         skipTutorial.interactable = gm.IsTutorial;
         skipTutorial.transform.Find("Label").GetComponent<TextMeshProUGUI>().alpha = gm.IsTutorial ? 1f : 0.35f;
         ShowOptions(false);
+        stats.Refresh(gm);
     }
 
     public void Close() => gameObject.SetActive(false);
@@ -61,6 +65,7 @@ public class PauseMenu : MonoBehaviour
     public void ShowOptions(bool show)
     {
         mainPanel.SetActive(!show);
+        stats.gameObject.SetActive(!show);
         options.Show(show);
     }
 }

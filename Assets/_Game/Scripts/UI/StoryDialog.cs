@@ -156,12 +156,15 @@ public class StoryDialog : MonoBehaviour
         if (string.IsNullOrEmpty(key) || config == null) return null;
         var gm = GameManager.Instance;
         Suit suit = gm != null ? gm.CurrentBossSuit : Suit.Spades;
+        // "jack_2" = Valete de um naipe fixo (gêmeos, Valete de Espadas)
+        if (key.StartsWith("jack_") && int.TryParse(key.Substring(5), out int s))
+            return config.FindBoss("boss0")?.SpriteFor((Suit)s);
         switch (key)
         {
             case "joker": return config.TutorialBoss.Sprite;
-            case "jack": return config.Bosses.Count > 0 ? config.Bosses[0].SpriteFor(suit) : null;
-            case "queen": return config.Bosses.Count > 1 ? config.Bosses[1].SpriteFor(suit) : null;
-            case "king": return config.Bosses.Count > 2 ? config.Bosses[2].SpriteFor(suit) : null;
+            case "jack": return config.FindBoss("boss0")?.SpriteFor(suit);
+            case "queen": return config.FindBoss("boss1")?.SpriteFor(suit);
+            case "king": return config.FindBoss("boss2")?.SpriteFor(suit);
             case "ace": return config.SecretBoss.Sprite;
         }
         return null;

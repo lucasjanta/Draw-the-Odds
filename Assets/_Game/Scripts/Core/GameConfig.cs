@@ -29,6 +29,21 @@ public class GameConfig : ScriptableObject
     [Tooltip("Fonte do título do jogo e dos nomes dos chefes (menu Draw the Odds/Import Alagard Font cria e preenche).")]
     [SerializeField] private TMPro.TMP_FontAsset titleFont;
 
+    [Header("Guarda-roupa (menu Draw the Odds/Setup Wardrobe preenche)")]
+    [Tooltip("Quadros de cada chapéu, na ordem de Wardrobe.Hats (0 = palha = adventurer.aseprite). Índice = número do quadro.")]
+    [SerializeField] private HatFrames[] hatFrames = new HatFrames[0];
+
+    [System.Serializable]
+    public class HatFrames { public Sprite[] frames = new Sprite[0]; }
+
+    // Quadro n do chapéu i (null = não tem).
+    public Sprite HatFrame(int hat, int frame) =>
+        hatFrames != null && hat >= 0 && hat < hatFrames.Length && hatFrames[hat] != null && hatFrames[hat].frames != null &&
+        frame >= 0 && frame < hatFrames[hat].frames.Length ? hatFrames[hat].frames[frame] : null;
+    // 1º quadro (idle): retrato na taverna e no ranking.
+    public Sprite HatSprite(int hat) => HatFrame(hat, 0);
+    public void EditorSetHats(HatFrames[] frames) => hatFrames = frames;
+
     [Header("Mão")]
     [SerializeField] private int maxHandSize = 10;
     [SerializeField] private int startingHandSize = 7;
@@ -279,6 +294,15 @@ public class GameConfig : ScriptableObject
         return list;
     }
     public IReadOnlyList<BossData> Bosses => bosses;
+    // Chefe pelo id da história ("boss0" Valete, "twins", "elder", "boss1" Dama, "boss2" Rei).
+    public BossData FindBoss(string storyId)
+    {
+        foreach (var b in bosses) if (b.StoryId == storyId) return b;
+        return null;
+    }
+    // Só o Editor (menu Draw the Odds/Setup Boss Roster) usa.
+    public List<BossData> EditorBosses => bosses;
+    public void EditorSetEntryPitch(float[] pitch) => bossEntryPitch = pitch;
     public BossData SecretBoss => secretBoss;
     // Índice 0..2 = chefes da história, 3 = Ás secreto.
     public int SecretBossIndex => bosses.Count;

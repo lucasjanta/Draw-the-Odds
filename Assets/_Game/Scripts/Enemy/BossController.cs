@@ -27,12 +27,27 @@ public class BossController : MonoBehaviour
     public int LockedNumber { get; private set; } = -1;
     public bool OnSecondNumber => LockedNumber >= 0;
     public bool IsDead { get; private set; }
-    public bool IsVulnerable => !IsDead && !intro;
+    public bool IsVulnerable => !IsDead && !intro && !changingPhase;
 
     public event Action<HitResult> OnHit;
     public event Action<int, int> OnHealthChanged;
     public event Action OnNumberChanged;
     public event Action OnDefeated;
+    public event Action OnSuitChanged;    // Dama (fase nova) e Rei (naipe do ataque): o HUD atualiza o nome
+
+    // ===================== Fases (Dama) e gêmeos (27/11) =====================
+    // Dama: cada vez que a vida zera ela troca de naipe e a vida enche de novo, até passar pelos 4.
+    public int Phase { get; private set; }                 // 0..Phases-1
+    public int PhaseCount => Data.Phases;
+    private readonly List<Suit> phaseOrder = new List<Suit>();
+    public IReadOnlyList<Suit> PhaseOrder => phaseOrder;
+    private bool changingPhase;                             // invulnerável enquanto troca de fase
+    private float nextPhaseShuffle;                         // fase de Ouros: troca o número de tempos em tempos
+    // Gêmeos: o irmão (quando um cai, o outro fica com raiva) e onde cada um para ao entrar.
+    public BossController Partner { get; private set; }
+    private float entryX;
+    private float startDelay;
+    private bool avenging;
     public event Action OnTelegraph;      // começou a antecipação de um ataque (tutorial usa)
     public event Action OnAttackFinished;
     public event Action<string> OnDieLanded;
@@ -74,19 +89,24 @@ public class BossController : MonoBehaviour
     // Raiva: 0 com a vida cheia → Data.Enrage com a vida no fim. Deixa tudo mais rápido
     // (só Dama e Rei têm Enrage > 0 no GameConfig).
     public float Rage => Data.Enrage * (1f - (float)CurrentHp / Mathf.Max(1, Data.MaxHp));
-    private float PaceFactor => (1f + Rage) * Boost;               // pausas, passeio e antecipação mais curtos
-    private float ProjectileFactor => (1f + Rage * 0.5f) * Boost;  // projéteis um pouco mais rápidos
+    private float PaceFactor => (1f + Rage) * Boost * SuitPace;               // pausas, passeio e antecipação mais curtos
+    private float ProjectileFactor => (1f + Rage * 0.5f) * Boost * SuitPace;  // projéteis um pouco mais rápidos
 
     // RE-RAISE aceito (CALL): o chefe fica mais rápido por alguns segundos.
+    // Gêmeo que perdeu o irmão: fica mais rápido até o fim da luta.
     private float boostUntil;
-    private float Boost => Time.time < boostUntil ? 1.25f : 1f;
+    private float Boost => (Time.time < boostUntil ? 1.25f : 1f) * (avenging ? 1.35f : 1f);
     public void SpeedBoost(float seconds) => boostUntil = Mathf.Max(boostUntil, Time.time + seconds);
+    // Dama na fase de Espadas: tudo 25% mais rápido.
+    private float SuitPace => Data.SuitMode == BossSuitMode.Phases && Suit == Suit.Spades ? 1.25f : 1f;
 
-    public static BossController Spawn(GameConfig config, BossData data, Suit suit, PlayerHealth player, float floorY)
+    // entryX = onde o chefe para ao entrar (gêmeos: um de cada lado). delay = espera extra antes do 1º ataque.
+    public static BossController Spawn(GameConfig config, BossData data, Suit suit, PlayerHealth player, float floorY,
+        float entryX = 0f, float delay = 0f)
     {
         var go = new GameObject("Boss " + data.DisplayName);
         go.layer = LayerMask.NameToLayer("Enemy");
-        go.transform.position = new Vector3(0f, 16f, 0f);
+        go.transform.position = new Vector3(entryX, 16f, 0f);
 
         var body = go.AddComponent<Rigidbody2D>();
         body.bodyType = RigidbodyType2D.Kinematic;
@@ -97,6 +117,16 @@ public class BossController : MonoBehaviour
         boss.Suit = suit;
         boss.player = player;
         boss.floorY = floorY;
+        boss.entryX = entryX;
+        boss.startDelay = delay;
+        // Dama: ordem dos 4 naipes (começa no sorteado, os outros em ordem aleatória)
+        if (data.SuitMode == BossSuitMode.Phases)
+        {
+            boss.phaseOrder.Add(suit);
+            var rest = new List<Suit> { Suit.Clubs, Suit.Spades, Suit.Hearts, Suit.Diamonds };
+            rest.Remove(suit);
+            while (rest.Count > 0) { int i = UnityEngine.Random.Range(0, rest.Count); boss.phaseOrder.Add(rest[i]); rest.RemoveAt(i); }
+        }
 
         boss.visual = new GameObject("Visual").transform;
         boss.visual.SetParent(go.transform, false);
@@ -130,14 +160,36 @@ public class BossController : MonoBehaviour
     {
         visualBase = visual.localPosition;
         var gm = GameManager.Instance;
-        bossIndex = gm != null ? gm.BossIndex : -1;
+        // Nível de força (0..2) em vez da posição na lista: a lista de chefes cresceu (gêmeos, Valete de Espadas...)
+        bossIndex = gm != null && gm.IsTutorial ? -1 : Data.Tier;
         if (gm != null) diff = gm.CurrentDifficulty;
         brain = StartCoroutine(Brain());
     }
 
+    // Gêmeos: cada um conhece o outro (o GameManager liga os dois).
+    public void SetPartner(BossController other) => Partner = other;
+
+    // O irmão caiu: este fica com raiva (mais rápido até o fim da luta).
+    public void Avenge()
+    {
+        if (IsDead || avenging) return;
+        avenging = true;
+        Fx.Popup(Loc.Pick("REVENGE!", "VINGANÇA!", "¡VENGANZA!", "VENGEANCE !", "RACHE!", "VENDETTA!"),
+                 transform.position + Vector3.up * (sr.bounds.extents.y + 1.6f), new Color(1f, 0.35f, 0.3f), 11f, 1.8f, 1.6f, true, Color.white);
+        StartCoroutine(HurtFlash());
+        Fx.Shake(0.3f, 0.2f);
+    }
+
     private void Update()
     {
-        if (IsDead || intro || Data.RerollEverySeconds <= 0f) return;
+        if (IsDead || intro || changingPhase) return;
+        // Dama na fase de Ouros: o número muda a cada 14 s
+        if (Data.SuitMode == BossSuitMode.Phases && Suit == Suit.Diamonds && Time.time >= nextPhaseShuffle && !rerolling)
+        {
+            nextPhaseShuffle = Time.time + 14f;
+            StartCoroutine(Reroll("SHUFFLE!"));
+        }
+        if (Data.RerollEverySeconds <= 0f) return;
         rerollTimer += Time.deltaTime;
         if (rerollTimer >= Data.RerollEverySeconds && !rerolling)
         {
@@ -146,13 +198,28 @@ public class BossController : MonoBehaviour
         }
     }
 
+    // Troca o naipe (sprite e nome) sem mexer no número.
+    private void SetSuit(Suit s)
+    {
+        if (Suit == s) return;
+        Suit = s;
+        Sprite next = Data.SpriteFor(s);
+        if (next != null)
+        {
+            if (flipping) flipFront = next; // no meio do giro: a frente nova aparece quando ele acabar
+            else sr.sprite = next;
+        }
+        OnSuitChanged?.Invoke();
+    }
+
     // ===================== IA =====================
     private IEnumerator Brain()
     {
         // Entrada: tom sobe a cada chefe (Valete → Dama → Rei); tutorial (índice −1) mais grave.
-        AudioManager.Sfx(config.SfxBossEntry, 0.9f, 0f, config.BossEntryPitch(bossIndex));
-        yield return MoveTo(new Vector2(0f, 6f), 1.4f);
+        if (startDelay <= 0f) AudioManager.Sfx(config.SfxBossEntry, 0.9f, 0f, config.BossEntryPitch(bossIndex));
+        yield return MoveTo(new Vector2(entryX, 6f), 1.4f);
         intro = false;
+        if (startDelay > 0f) yield return Wander(startDelay); // 2º gêmeo: não ataca junto com o irmão
 
         while (!IsDead)
         {
@@ -184,11 +251,23 @@ public class BossController : MonoBehaviour
                 }
             }
 
+            // Rei: o naipe gira junto com o dado e muda o ataque (♣ mais projéteis · ♠ mais rápido ·
+            // ♥ ele se cura · ♦ chuva de fichas logo depois).
+            bool rollSuit = Data.SuitMode == BossSuitMode.PerAttack;
+            Suit rolled = rollSuit ? SuitInfo.Random() : Suit;
+
             OnTelegraph?.Invoke();
-            yield return Telegraph(attack, face, second, face2);
+            yield return Telegraph(attack, face, second, face2, rollSuit, rolled);
+            if (rollSuit)
+            {
+                attack = SuitTwist(attack, rolled);
+                if (second != null) second = SuitTwist(second, rolled);
+                if (rolled == Suit.Hearts) HealSelf(2);
+            }
 
             if (second == null) yield return RunAttack(attack);
             else yield return RunTogether(attack, second);
+            if (rollSuit && rolled == Suit.Diamonds && !IsDead) yield return Rain(3, 22f * ProjectileFactor);
             OnAttackFinished?.Invoke();
             quickFollow = UnityEngine.Random.value < Data.ChainChance * diff.ComboMultiplier;
         }
@@ -216,6 +295,29 @@ public class BossController : MonoBehaviour
             }
         }
         return attack;
+    }
+
+    // Rei: ajusta o ataque pelo naipe sorteado.
+    private static BossAttack SuitTwist(BossAttack a, Suit s)
+    {
+        switch (s)
+        {
+            case Suit.Clubs:  // mais projéteis (investida: +1)
+                return new BossAttack(a.Type, a.Count + (a.Type == BossAttackType.Dash ? 1 : 2), a.Speed);
+            case Suit.Spades: // 30% mais rápido
+                return new BossAttack(a.Type, a.Count, a.Speed * 1.3f);
+        }
+        return a;
+    }
+
+    // Cura o próprio chefe (Rei com ♥, Dama de Copas punindo o chute).
+    private void HealSelf(int amount)
+    {
+        if (IsDead || CurrentHp >= Data.MaxHp) return;
+        CurrentHp = Mathf.Min(Data.MaxHp, CurrentHp + amount);
+        OnHealthChanged?.Invoke(CurrentHp, Data.MaxHp);
+        Fx.Popup($"+{amount}", transform.position + Vector3.up * (sr.bounds.extents.y + 0.6f), SuitInfo.GetColor(Suit.Hearts), 9f, 1.2f, 1.6f, true, Color.white);
+        AudioManager.Sfx(config.SfxHeal, 0.7f, 0.05f, 0.8f);
     }
 
     private IEnumerator RunAttack(BossAttack attack)
@@ -287,7 +389,9 @@ public class BossController : MonoBehaviour
     // Antecipação: um dado rola acima da cabeça e o chefe treme. Quando o dado para, a face mostra
     // qual ataque vem (nome escrito em cima) e o chefe pisca com a cor do ataque.
     // Com second != null, rolam DOIS dados (ataques misturados) e os dois nomes aparecem.
-    private IEnumerator Telegraph(BossAttack attack, int finalFace, BossAttack second = null, int secondFace = 0)
+    // rollSuit (Rei): a carta do chefe troca de naipe enquanto o dado gira e para em "rolledSuit".
+    private IEnumerator Telegraph(BossAttack attack, int finalFace, BossAttack second = null, int secondFace = 0,
+        bool rollSuit = false, Suit rolledSuit = Suit.Clubs)
     {
         Color tint = attack.Tint;
         const float landAt = 0.6f; // 60% do tempo rolando, 40% com a face à mostra
@@ -305,6 +409,7 @@ public class BossController : MonoBehaviour
             die2.transform.localScale = Vector3.one * dieScale;
         }
         string label = second != null ? attack.Label + " + " + second.Label : attack.Label;
+        if (rollSuit) label += " " + SuitInfo.Symbol(rolledSuit) + " " + SuitTwistName(rolledSuit);
 
         // Ataque misturado: um pouco mais de tempo para ler os dois dados.
         float duration = Data.TelegraphTime * diff.TelegraphMultiplier * (second != null ? 1.2f : 1f) / (1f + Rage * 0.6f);
@@ -323,7 +428,8 @@ public class BossController : MonoBehaviour
                     die2.sprite = config.DieFace(UnityEngine.Random.Range(1, 7));
                     die2.transform.localRotation = Quaternion.Euler(0f, 0f, UnityEngine.Random.Range(-25f, 25f));
                 }
-                faceTimer = 0.06f;
+                if (rollSuit) SetSuit((Suit)(((int)Suit + 1) % 4)); // a carta do Rei passa pelos naipes
+                faceTimer = rollSuit ? 0.09f : 0.06f;
             }
             else if (k >= landAt)
             {
@@ -339,6 +445,7 @@ public class BossController : MonoBehaviour
                 if (!landed)
                 {
                     landed = true;
+                    if (rollSuit) SetSuit(rolledSuit);
                     // Nome do ataque ao lado do dado (em cima ficaria fora da tela quando o chefe voa alto)
                     // Perto da borda direita o nome vai para a esquerda dos dados.
                     // Nome do ataque logo ABAIXO do chefe (em cima ficava atrás dos painéis do HUD).
@@ -367,6 +474,15 @@ public class BossController : MonoBehaviour
         Destroy(die.gameObject);
         if (die2 != null) Destroy(die2.gameObject);
     }
+
+    // Efeito do naipe do Rei escrito junto com o nome do ataque.
+    private static string SuitTwistName(Suit s) => s switch
+    {
+        Suit.Clubs => Loc.Pick("MORE", "MAIS", "MÁS", "PLUS", "MEHR", "PIÙ"),
+        Suit.Spades => Loc.Pick("FASTER", "RÁPIDO", "RÁPIDO", "RAPIDE", "SCHNELL", "VELOCE"),
+        Suit.Hearts => Loc.Pick("HEAL", "CURA", "CURA", "SOIN", "HEILT", "CURA"),
+        _ => Loc.Pick("+ CHIPS", "+ FICHAS", "+ FICHAS", "+ JETONS", "+ CHIPS", "+ FICHE"),
+    };
 
     // Leque de dados mirado no player.
     private IEnumerator Volley(int count, float speed)
@@ -695,6 +811,7 @@ public class BossController : MonoBehaviour
         r.marked = marked;
         LuckyMath.ApplyRaise(ref r, raise);
         if (IsDead) return r;
+        if (changingPhase) { Fx.Popup("0", hitPosition + Vector3.right, Color.white, 5f, 0.9f); return r; } // trocando de fase: imune
 
         // Ás (dois números): acertar o 1º só TRAVA ele (dano de crítico); o 2º logo depois = ROYAL FLUSH (x1,5).
         if (Data.TwoNumbers && r.isCritical)
@@ -704,7 +821,9 @@ public class BossController : MonoBehaviour
         }
 
         if (!r.isHeal) CurrentHp = Mathf.Max(CannotDie ? 1 : 0, CurrentHp - r.amount);
-        r.defeated = CurrentHp <= 0;
+        // Dama: a vida zerou mas ainda tem naipe pela frente → troca de fase em vez de morrer.
+        bool nextPhase = CurrentHp <= 0 && Phase < PhaseCount - 1;
+        r.defeated = CurrentHp <= 0 && !nextPhase;
 
         // Feedback visual
         Vector3 top = transform.position + Vector3.up * (sr.bounds.extents.y + 0.5f);
@@ -719,10 +838,10 @@ public class BossController : MonoBehaviour
         float hintSize = r.isCritical ? 14f : r.distance <= 2 ? 10f : 8.5f;
         Fx.Popup(hintText, top, r.isCritical ? new Color(1f, 0.9f, 0.2f) : warm, hintSize, r.isCritical ? 1.8f : 1.3f, 1.6f,
             true, r.isCritical ? Color.white : (Color?)null);
-        // Copas só cura se a carta estiver perto do número (mesma tabela do dano): longe = "NO HEAL".
-        if (r.isHeal) Fx.Popup(r.amount > 0 ? $"+{r.amount} HP" : "NO HEAL", hitPosition + Vector3.left, SuitInfo.GetColor(Suit.Hearts), r.amount > 0 ? 7f : 5f, 1f, 1.6f, r.amount > 0);
+        // ♥ com coringa: cura o jogador além do dano
+        if (r.healAmount > 0) Fx.Popup($"+{r.healAmount} HP", hitPosition + Vector3.left, SuitInfo.GetColor(Suit.Hearts), 7f, 1f, 1.6f, true);
         // Com dano, o número voa até a barra de vida (BossHUD). Sem dano, só um "0" pequeno aqui.
-        else if (r.amount <= 0) Fx.Popup("0", hitPosition + Vector3.right, Color.white, 5f, 0.9f);
+        if (r.amount <= 0) Fx.Popup("0", hitPosition + Vector3.right, Color.white, 5f, 0.9f);
         if (r.amount > 0 && !r.isHeal && !r.isCritical) Fx.HitStop(0.05f); // congeladinha em todo acerto
         Fx.Burst(hitPosition, SuitInfo.GetColor(card.suit), r.isCritical ? 22 : 10, r.isCritical ? 12f : 7f, 0.3f);
         Fx.Shake(r.isCritical ? 0.75f : 0.12f + 0.06f * r.amount, r.isCritical ? 0.45f : 0.15f);
@@ -755,6 +874,14 @@ public class BossController : MonoBehaviour
         if (r.defeated)
         {
             Die();
+        }
+        else if (nextPhase)
+        {
+            StartCoroutine(NextPhase());
+        }
+        else if (Data.SuitMode == BossSuitMode.Phases && Suit == Suit.Hearts && r.amount <= 0)
+        {
+            HealSelf(1); // Dama de Copas: chutar longe do número cura ela
         }
         else if (r.firstLocked)
         {
@@ -847,7 +974,7 @@ public class BossController : MonoBehaviour
     {
         if (flipping || sr == null) yield break;
         flipping = true;
-        Sprite front = flipFront = sr.sprite;
+        flipFront = sr.sprite; // SetSuit pode trocar a frente durante o giro
         AudioManager.Sfx(config.SfxNewNumber, 0.85f, 0f); // o som da troca de número toca junto com o giro
         const float duration = 0.5f, turns = 2f;
         for (float t = 0f; t < duration; t += Time.deltaTime)
@@ -859,15 +986,52 @@ public class BossController : MonoBehaviour
             // Largura mínima de 0,05 para a carta não sumir de vez (fica uma "linha" no meio do giro)
             float width = Mathf.Max(0.05f, Mathf.Abs(cos));
             visual.localScale = new Vector3(width * punch, punch, 1f);
-            if (config.CardBack != null) sr.sprite = cos < 0f ? config.CardBack : front;
+            if (config.CardBack != null) sr.sprite = cos < 0f ? config.CardBack : flipFront;
             sr.color = Color.Lerp(Color.white, new Color(1f, 0.85f, 0.6f), Mathf.Sin(k * Mathf.PI));
             yield return null;
         }
         visual.localScale = Vector3.one;
-        sr.sprite = front;
+        sr.sprite = flipFront;
         sr.color = Color.white;
         flipping = false;
     }
+
+    // Dama: a vida zerou → troca para o próximo naipe, enche a vida e sorteia um número novo.
+    // Fica imune durante a troca (a carta gira e o naipe muda no meio do giro).
+    private IEnumerator NextPhase()
+    {
+        changingPhase = true;
+        Phase++;
+        Suit next = Phase < phaseOrder.Count ? phaseOrder[Phase] : SuitInfo.Random();
+        ClearWarnings();
+        Fx.Shake(0.5f, 0.35f);
+        ScreenFlash.Play(SuitInfo.GetColor(next), 0.3f, 0.35f);
+        var ring = Fx.MakeSprite("PhaseRing", Fx.Ring, transform.position, SuitInfo.GetColor(next), 150);
+        ring.gameObject.AddComponent<ShockRing>().Init(12f, 0.5f, 1f);
+        StartCoroutine(FlipCard());
+        yield return new WaitForSeconds(0.25f);
+        SetSuit(next);
+        RollNumbers();
+        CurrentHp = Data.MaxHp;
+        halfRerollDone = false;
+        nextPhaseShuffle = Time.time + 14f;
+        OnHealthChanged?.Invoke(CurrentHp, Data.MaxHp);
+        OnNumberChanged?.Invoke();
+        string phaseText = Loc.Pick("PHASE", "FASE", "FASE", "PHASE", "PHASE", "FASE") + $" {Phase + 1}/{PhaseCount}  {SuitInfo.Symbol(next)}";
+        Fx.Popup(phaseText, transform.position + Vector3.up * (sr.bounds.extents.y + 1.6f), SuitInfo.GetColor(next), 12f, 2f, 1.6f, true, Color.white);
+        Fx.Popup(PhaseRuleText(next), transform.position + Vector3.down * (sr.bounds.extents.y + 1f), Color.white, 7f, 2.4f);
+        yield return new WaitForSeconds(0.9f);
+        changingPhase = false;
+    }
+
+    // O que muda em cada naipe da Dama (aparece embaixo dela na troca de fase).
+    public static string PhaseRuleText(Suit s) => s switch
+    {
+        Suit.Spades => Loc.Pick("SPADES: FASTER", "ESPADAS: MAIS RÁPIDA", "ESPADAS: MÁS RÁPIDA", "PIQUE : PLUS RAPIDE", "PIK: SCHNELLER", "PICCHE: PIÙ VELOCE"),
+        Suit.Hearts => Loc.Pick("HEARTS: MISSES HEAL HER", "COPAS: ERRAR CURA ELA", "CORAZONES: FALLAR LA CURA", "CŒUR : RATER LA SOIGNE", "HERZ: FEHLWÜRFE HEILEN SIE", "CUORI: SBAGLIARE LA CURA"),
+        Suit.Diamonds => Loc.Pick("DIAMONDS: NUMBER SHUFFLES", "OUROS: NÚMERO EMBARALHA", "DIAMANTES: EL NÚMERO SE BARAJA", "CARREAU : LE NOMBRE CHANGE", "KARO: ZAHL WECHSELT", "QUADRI: IL NUMERO CAMBIA"),
+        _ => Loc.Pick("CLUBS: STEADY", "PAUS: NORMAL", "TRÉBOLES: NORMAL", "TRÈFLE : NORMAL", "KREUZ: NORMAL", "FIORI: NORMALE"),
+    };
 
     // Tutorial: ao voltar uma dica o Coringa recupera a vida.
     public void RestoreFullHp()
@@ -886,6 +1050,7 @@ public class BossController : MonoBehaviour
         if (flipping) { visual.localScale = Vector3.one; sr.sprite = flipFront; flipping = false; } // morreu girando
         sr.color = Color.white;
         ClearWarnings();
+        if (Partner != null && !Partner.IsDead) Partner.Avenge(); // gêmeos: o outro fica com raiva
         OnDefeated?.Invoke();
         StartCoroutine(DeathAnimation());
     }

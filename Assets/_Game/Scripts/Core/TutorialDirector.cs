@@ -307,12 +307,12 @@ public class TutorialDirector : MonoBehaviour
         string c = SuitInfo.Colored("♣", Suit.Clubs), s = SuitInfo.Colored("♠", Suit.Spades);
         string h = SuitInfo.Colored("♥", Suit.Hearts), d = SuitInfo.Colored("♦", Suit.Diamonds);
         yield return Pause(Loc.Pick(
-            $"{c} normal  {s} x1.5 damage\n{h} heals you  {d} +1 card",
-            $"{c} normal  {s} dano x1.5\n{h} cura você  {d} +1 carta",
-            $"{c} normal  {s} daño x1.5\n{h} te cura  {d} +1 carta",
-            $"{c} normal  {s} dégâts x1.5\n{h} te soigne  {d} +1 carte",
-            $"{c} normal  {s} Schaden x1.5\n{h} heilt dich  {d} +1 Karte",
-            $"{c} normale  {s} danni x1.5\n{h} ti cura  {d} +1 carta"));
+            $"{c} {s} {h} {d} all deal the <color=#FFD447>same damage</color>.\n<color=#B57CFF>JOKERS</color> give each suit a bonus.",
+            $"{c} {s} {h} {d} dão o <color=#FFD447>mesmo dano</color>.\nOs <color=#B57CFF>CORINGAS</color> dão bônus a cada naipe.",
+            $"{c} {s} {h} {d} hacen el <color=#FFD447>mismo daño</color>.\nLos <color=#B57CFF>COMODINES</color> dan bonus a cada palo.",
+            $"{c} {s} {h} {d} font les <color=#FFD447>mêmes dégâts</color>.\nLes <color=#B57CFF>JOKERS</color> donnent un bonus à chaque couleur.",
+            $"{c} {s} {h} {d} machen <color=#FFD447>gleich viel Schaden</color>.\n<color=#B57CFF>JOKER</color> geben jeder Farbe einen Bonus.",
+            $"{c} {s} {h} {d} fanno gli <color=#FFD447>stessi danni</color>.\nI <color=#B57CFF>JOLLY</color> danno un bonus a ogni seme."));
     }
 
     // Primeiro ataque: quando o dado para, o tempo PARA e a dica explica o que o dado decide.

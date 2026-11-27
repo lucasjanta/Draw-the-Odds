@@ -20,11 +20,16 @@ public class BossHUD : MonoBehaviour
     private UnityEngine.UI.Image fillImage;
     private readonly List<string> history = new List<string>();
 
-    public static BossHUD Create(Transform parent, GameManager gm)
+    private GameManager gm;
+    private int slot;   // 0 = chefe principal · 1 = 2º gêmeo (painel à esquerda do 1º)
+
+    public static BossHUD Create(Transform parent, GameManager gm, int slot = 0)
     {
-        var panel = UIFactory.Image("BossHUD", parent, UIFactory.PanelColor);
-        panel.rectTransform.Place(new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-8f, -8f), new Vector2(206f, 58f));
+        var panel = UIFactory.Image("BossHUD" + (slot > 0 ? slot.ToString() : ""), parent, UIFactory.PanelColor);
+        panel.rectTransform.Place(new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(slot == 0 ? -8f : -220f, -8f), new Vector2(206f, 58f));
         var hud = panel.gameObject.AddComponent<BossHUD>();
+        hud.gm = gm;
+        hud.slot = slot;
         hud.group = panel.gameObject.AddComponent<CanvasGroup>();
         hud.group.alpha = 0f;
 
@@ -51,22 +56,32 @@ public class BossHUD : MonoBehaviour
         hud.barRect = (RectTransform)hud.fill.parent;
         hud.fillImage = hud.fill.GetComponent<UnityEngine.UI.Image>();
         gm.OnBossSpawned += hud.Bind;
-        gm.OnBossHit += hud.AddHistory;
         return hud;
     }
 
     private void Bind(BossController b)
     {
+        // Cada painel fica com um chefe: o 1º surgido na luta (slot 0) ou o 2º gêmeo (slot 1).
+        int index = -1;
+        for (int i = 0; i < gm.ActiveBosses.Count; i++) if (gm.ActiveBosses[i] == b) index = i;
+        if (index < 0) index = 0;
+        if (index != slot)
+        {
+            if (index == 0 && slot > 0) boss = null; // luta nova sem gêmeo: o 2º painel some
+            return;
+        }
         boss = b;
         history.Clear();
         historyText.text = "-";
-        nameText.text = b.Title;
+        RefreshName();
         RefreshRange();
+        b.OnSuitChanged += RefreshName;
         fillValue = ghostValue = targetFill = 1f;
         flying = 0;
         UIFactory.SetBar(fill, 1f);
         // A barra só desce quando o número de dano chega nela (se tiver algum voando).
         b.OnHealthChanged += (cur, max) => { targetFill = cur / (float)max; if (flying == 0) ApplyFill(); };
+        b.OnHit += AddHistory; // cada painel mostra as tentativas no SEU chefe (gêmeos)
         b.OnHit += r => { if (!r.isHeal && r.amount > 0 && b != null) StartCoroutine(FlyDamage(b.transform.position, r.amount, r.isCritical)); };
         b.OnNumberChanged += () =>
         {
@@ -75,6 +90,13 @@ public class BossHUD : MonoBehaviour
             flash = 1f;
             RefreshRange();
         };
+    }
+
+    // Nome com o naipe atual; Dama: fase atual (ex.: "QUEEN ♥ 2/4").
+    private void RefreshName()
+    {
+        if (boss == null) return;
+        nameText.text = boss.PhaseCount > 1 ? $"{boss.Title} <size=80%>{boss.Phase + 1}/{boss.PhaseCount}</size>" : boss.Title;
     }
 
     // "NUMBER ? (1–13)". Ás: "1º 7 · 2º ?" depois de travar o 1º. Dado Viciado: PAR / ÍMPAR do número atual.
@@ -86,6 +108,14 @@ public class BossHUD : MonoBehaviour
         if (boss.Data.TwoNumbers)
             text = boss.OnSecondNumber ? $"<color=#4CFF9A>{boss.LockedNumber}</color> + ? {range}" : $"? + ? {range}";
         else text = $"NUMBER ? {range}";
+        if (Jokers.ShowHalf)
+        {
+            // Olho de Lince: metade de baixo ou de cima da faixa
+            int mid = (boss.Data.MinNumber + boss.Data.MaxNumber) / 2;
+            text += boss.SecretNumber <= mid
+                ? " <color=#FFD080>" + Loc.Pick("LOW", "BAIXO", "BAJO", "BAS", "TIEF", "BASSO") + "</color>"
+                : " <color=#FFD080>" + Loc.Pick("HIGH", "ALTO", "ALTO", "HAUT", "HOCH", "ALTO") + "</color>";
+        }
         if (Jokers.ShowParity)
             text += boss.SecretNumber % 2 == 0
                 ? " <color=#FFB040>" + Loc.Pick("EVEN", "PAR", "PAR", "PAIR", "GERADE", "PARI") + "</color>"

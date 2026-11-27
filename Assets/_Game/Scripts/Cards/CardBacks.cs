@@ -9,15 +9,19 @@ public static class CardBacks
         public string name;   // inglês (o Loc traduz)
         public Color tint;
         public int cost;
+        public int achievement;  // -1 = compra com fichas · >= 0 = só pela conquista (Achievements)
     }
 
     public static readonly Back[] All =
     {
-        new Back { name = "CLASSIC", tint = Color.white, cost = 0 },
-        new Back { name = "ROYAL GOLD", tint = new Color(1f, 0.86f, 0.45f), cost = 60 },
-        new Back { name = "EMERALD", tint = new Color(0.55f, 1f, 0.72f), cost = 60 },
-        new Back { name = "CRIMSON", tint = new Color(1f, 0.55f, 0.55f), cost = 80 },
-        new Back { name = "MIDNIGHT", tint = new Color(0.62f, 0.66f, 1f), cost = 80 },
+        new Back { name = "CLASSIC", tint = Color.white, cost = 0, achievement = -1 },
+        new Back { name = "ROYAL GOLD", tint = new Color(1f, 0.86f, 0.45f), cost = 60, achievement = -1 },
+        new Back { name = "EMERALD", tint = new Color(0.55f, 1f, 0.72f), cost = 60, achievement = -1 },
+        new Back { name = "CRIMSON", tint = new Color(1f, 0.55f, 0.55f), cost = 80, achievement = -1 },
+        new Back { name = "MIDNIGHT", tint = new Color(0.62f, 0.66f, 1f), cost = 80, achievement = -1 },
+        // Conquistas (27/11)
+        new Back { name = "OBSIDIAN", tint = new Color(0.42f, 0.4f, 0.5f), cost = 0, achievement = Achievements.Flawless },
+        new Back { name = "SHARK", tint = new Color(0.45f, 0.95f, 1f), cost = 0, achievement = Achievements.CardShark },
     };
 
     public static Color Tint

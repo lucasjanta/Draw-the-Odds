@@ -36,13 +36,15 @@ public static class StoryLines
     public const string AceDefeat = "ace_defeat";
     public const string EndingThrone = "ending_throne";
     public const string EndingFree = "ending_free";
-    public static string BossIntro(int index) => "boss" + index + "_intro";
-    public static string BossDefeat(int index) => "boss" + index + "_defeat";
+    // storyId vem do BossData: "boss0" (Valete), "twins", "elder", "boss1" (Dama), "boss2" (Rei). Vazio = sem cena.
+    public static string BossIntro(string storyId) => string.IsNullOrEmpty(storyId) ? "" : storyId + "_intro";
+    public static string BossDefeat(string storyId) => string.IsNullOrEmpty(storyId) ? "" : storyId + "_defeat";
 
     private static readonly string[] AllIds =
     {
         Intro, TutorialIntro, TutorialOutro, Ending, AceHint, AceReveal, AceDefeat, EndingThrone, EndingFree,
         "boss0_intro", "boss1_intro", "boss2_intro", "boss0_defeat", "boss1_defeat", "boss2_defeat",
+        "twins_intro", "twins_defeat", "elder_intro", "elder_defeat",
     };
 
     public static bool Seen(string id) => PlayerPrefs.GetInt(PrefPrefix + id, 0) == 1;
@@ -62,6 +64,9 @@ public static class StoryLines
 
     private static StoryLine Joker(string text) => new StoryLine(Loc.T("JOKER"), JokerColor, text, "joker");
     private static StoryLine Royal(string nameEn, string text) => new StoryLine(Loc.T(nameEn), RoyalColor, text, nameEn.ToLowerInvariant());
+    // Valetes com naipe fixo: retrato "jack_<naipe>" (ver StoryDialog.PortraitSprite)
+    private static StoryLine JackOf(Suit suit, string text) =>
+        new StoryLine(Loc.T("JACK") + " " + SuitInfo.Symbol(suit), SuitInfo.GetColor(suit), text, "jack_" + (int)suit);
     private static StoryLine Ace(string text) => new StoryLine(Loc.T("ACE"), AceColor, text, "ace");
 
     // Cena pelo id (null = não existe).
@@ -84,6 +89,10 @@ public static class StoryLines
             case "boss0_defeat": return JackDefeat();
             case "boss1_defeat": return QueenDefeat();
             case "boss2_defeat": return KingDefeat();
+            case "twins_intro": return TwinsIntro();
+            case "twins_defeat": return TwinsDefeat();
+            case "elder_intro": return ElderIntro();
+            case "elder_defeat": return ElderDefeat();
         }
         return null;
     }
@@ -181,6 +190,73 @@ public static class StoryLines
             "Va bene... tieniti le monete.\nLa Regina non sarà così generosa.")),
     };
 
+    // ===================== Valetes Gêmeos (♥ e ♦), os irmãos do meio =====================
+    private static List<StoryLine> TwinsIntro() => new List<StoryLine>
+    {
+        JackOf(Suit.Hearts, Loc.Pick(
+            "You beat our little brother?\nThen you'll have to beat <color=#FFD447>both of us</color>.",
+            "Você venceu nosso irmão caçula?\nEntão vai ter que vencer <color=#FFD447>nós dois</color>.",
+            "¿Venciste a nuestro hermano pequeño?\nEntonces tendrás que vencernos <color=#FFD447>a los dos</color>.",
+            "Tu as battu notre petit frère ?\nAlors il faudra nous battre <color=#FFD447>tous les deux</color>.",
+            "Du hast unseren kleinen Bruder besiegt?\nDann musst du <color=#FFD447>uns beide</color> schlagen.",
+            "Hai battuto il nostro fratellino?\nAllora dovrai battere <color=#FFD447>tutti e due</color>.")),
+        JackOf(Suit.Diamonds, Loc.Pick(
+            "Two numbers, two cards, twice the taxes!",
+            "Dois números, duas cartas, imposto em dobro!",
+            "¡Dos números, dos cartas, el doble de impuestos!",
+            "Deux nombres, deux cartes, double impôt !",
+            "Zwei Zahlen, zwei Karten, doppelte Steuern!",
+            "Due numeri, due carte, tasse doppie!")),
+        Joker(Loc.Pick(
+            "Each twin hides <color=#FFD447>his own number</color>. Aim at one at a time!\nIf one falls, the other gets <color=#FF6A2E>angry</color>.",
+            "Cada gêmeo esconde <color=#FFD447>o próprio número</color>. Mire em um de cada vez!\nSe um cair, o outro fica <color=#FF6A2E>furioso</color>.",
+            "Cada gemelo esconde <color=#FFD447>su propio número</color>. ¡Apunta a uno a la vez!\nSi uno cae, el otro se <color=#FF6A2E>enfurece</color>.",
+            "Chaque jumeau cache <color=#FFD447>son propre nombre</color>. Vise-les un par un !\nSi l'un tombe, l'autre devient <color=#FF6A2E>furieux</color>.",
+            "Jeder Zwilling hat <color=#FFD447>seine eigene Zahl</color>. Ziel auf einen nach dem anderen!\nFällt einer, wird der andere <color=#FF6A2E>wütend</color>.",
+            "Ogni gemello nasconde <color=#FFD447>il suo numero</color>. Mira uno alla volta!\nSe uno cade, l'altro si <color=#FF6A2E>infuria</color>.")),
+    };
+
+    private static List<StoryLine> TwinsDefeat() => new List<StoryLine>
+    {
+        JackOf(Suit.Hearts, Loc.Pick(
+            "Our big brother will hear about this...",
+            "Nosso irmão mais velho vai ficar sabendo disso...",
+            "Nuestro hermano mayor se enterará de esto...",
+            "Notre grand frère va en entendre parler...",
+            "Unser großer Bruder wird davon hören...",
+            "Nostro fratello maggiore lo verrà a sapere...")),
+    };
+
+    // ===================== Valete de Espadas, o irmão mais velho =====================
+    private static List<StoryLine> ElderIntro() => new List<StoryLine>
+    {
+        JackOf(Suit.Spades, Loc.Pick(
+            "I am the eldest Jack, sword of the Crown.\nMy brothers collected coins. <color=#FFD447>I collect heads</color>.",
+            "Eu sou o Valete mais velho, a espada da Coroa.\nMeus irmãos cobravam moedas. <color=#FFD447>Eu cobro cabeças</color>.",
+            "Soy la J mayor, la espada de la Corona.\nMis hermanos cobraban monedas. <color=#FFD447>Yo cobro cabezas</color>.",
+            "Je suis l'aîné des Valets, l'épée de la Couronne.\nMes frères prenaient des pièces. <color=#FFD447>Moi, des têtes</color>.",
+            "Ich bin der älteste Bube, das Schwert der Krone.\nMeine Brüder kassierten Münzen. <color=#FFD447>Ich kassiere Köpfe</color>.",
+            "Sono il Fante maggiore, la spada della Corona.\nI miei fratelli riscuotevano monete. <color=#FFD447>Io riscuoto teste</color>.")),
+        Joker(Loc.Pick(
+            "He's fast and his range is wider: <color=#FFD447>1 to 16</color>.\nKeep moving!",
+            "Ele é rápido e a faixa é maior: <color=#FFD447>1 a 16</color>.\nNão pare de se mexer!",
+            "Es rápido y su rango es mayor: <color=#FFD447>1 a 16</color>.\n¡No dejes de moverte!",
+            "Il est rapide et sa plage est plus grande : <color=#FFD447>1 à 16</color>.\nNe t'arrête pas !",
+            "Er ist schnell und sein Bereich ist größer: <color=#FFD447>1 bis 16</color>.\nBleib in Bewegung!",
+            "È veloce e il suo intervallo è più ampio: <color=#FFD447>da 1 a 16</color>.\nNon fermarti!")),
+    };
+
+    private static List<StoryLine> ElderDefeat() => new List<StoryLine>
+    {
+        JackOf(Suit.Spades, Loc.Pick(
+            "Go on, then. The Queen changes her colors\nfaster than I change my sword.",
+            "Pode ir. A Dama muda de cor\nmais rápido do que eu troco de espada.",
+            "Adelante. La Reina cambia de color\nmás rápido de lo que yo cambio de espada.",
+            "Vas-y. La Dame change de couleur\nplus vite que je ne change d'épée.",
+            "Geh nur. Die Dame wechselt ihre Farben\nschneller als ich mein Schwert.",
+            "Vai pure. La Regina cambia colore\npiù in fretta di quanto io cambi spada.")),
+    };
+
     // ===================== Dama, a Intrigante =====================
     private static List<StoryLine> QueenIntro() => new List<StoryLine>
     {
@@ -192,12 +268,12 @@ public static class StoryLines
             "Mein Lieber, alles, was ich sage, ist wahr...\nbis es das nicht mehr ist.",
             "Caro, tutto ciò che dico è vero...\nfinché non lo è più.")),
         Joker(Loc.Pick(
-            "Careful: when she's hurt, she changes her story.\nAnd her <color=#FF6A2E>number</color>.",
-            "Cuidado: quando ela se machuca, muda a versão da história.\nE o <color=#FF6A2E>número</color>.",
-            "Cuidado: cuando la hieren, cambia su versión.\nY su <color=#FF6A2E>número</color>.",
-            "Attention : quand elle est blessée, elle change sa version.\nEt son <color=#FF6A2E>nombre</color>.",
-            "Vorsicht: Wenn sie verletzt ist, ändert sie ihre Geschichte.\nUnd ihre <color=#FF6A2E>Zahl</color>.",
-            "Attento: quando è ferita, cambia versione.\nE anche <color=#FF6A2E>numero</color>.")),
+            "Careful: each time she falls, she changes her <color=#FF6A2E>suit</color>.\nFour suits, <color=#FFD447>four lives</color>.",
+            "Cuidado: cada vez que ela cai, troca de <color=#FF6A2E>naipe</color>.\nQuatro naipes, <color=#FFD447>quatro vidas</color>.",
+            "Cuidado: cada vez que cae, cambia de <color=#FF6A2E>palo</color>.\nCuatro palos, <color=#FFD447>cuatro vidas</color>.",
+            "Attention : à chaque chute, elle change de <color=#FF6A2E>couleur</color>.\nQuatre couleurs, <color=#FFD447>quatre vies</color>.",
+            "Vorsicht: Jedes Mal, wenn sie fällt, wechselt sie die <color=#FF6A2E>Farbe</color>.\nVier Farben, <color=#FFD447>vier Leben</color>.",
+            "Attento: ogni volta che cade, cambia <color=#FF6A2E>seme</color>.\nQuattro semi, <color=#FFD447>quattro vite</color>.")),
     };
 
     private static List<StoryLine> QueenDefeat() => new List<StoryLine>
@@ -222,12 +298,12 @@ public static class StoryLines
             "Per königlichem Erlass ist die Wahrheit, was ich sage.\nUnd ich ändere meine Meinung <color=#FFD447>alle 25 Sekunden</color>.",
             "Per decreto reale, la verità è ciò che dico io.\nE cambio idea <color=#FFD447>ogni 25 secondi</color>.")),
         Joker(Loc.Pick(
-            "Royal propaganda! His number rewrites itself on schedule.\nStrike fast, villager!",
-            "Propaganda real! O número dele se reescreve no relógio.\nSeja rápido, aldeão!",
-            "¡Propaganda real! Su número se reescribe a horario.\n¡Golpea rápido, aldeano!",
-            "Propagande royale ! Son nombre se réécrit à heure fixe.\nFrappe vite, villageois !",
-            "Königliche Propaganda! Seine Zahl schreibt sich nach Plan neu.\nSchlag schnell zu, Dorfbewohner!",
-            "Propaganda reale! Il suo numero si riscrive a orario.\nColpisci in fretta, popolano!")),
+            "He rolls a <color=#FFD447>suit</color> with every die: ♣ more, ♠ faster,\n♥ he heals, ♦ chips rain. Strike fast, villager!",
+            "Ele sorteia um <color=#FFD447>naipe</color> junto com o dado: ♣ mais, ♠ rápido,\n♥ ele se cura, ♦ chove ficha. Seja rápido, aldeão!",
+            "Sortea un <color=#FFD447>palo</color> con cada dado: ♣ más, ♠ rápido,\n♥ se cura, ♦ llueven fichas. ¡Golpea rápido, aldeano!",
+            "Il tire une <color=#FFD447>couleur</color> à chaque dé : ♣ plus, ♠ rapide,\n♥ il se soigne, ♦ pluie de jetons. Frappe vite !",
+            "Er würfelt mit jedem Wurf eine <color=#FFD447>Farbe</color>: ♣ mehr, ♠ schneller,\n♥ er heilt sich, ♦ Chip-Regen. Schlag schnell zu!",
+            "Estrae un <color=#FFD447>seme</color> a ogni dado: ♣ di più, ♠ veloce,\n♥ si cura, ♦ pioggia di fiche. Colpisci in fretta!")),
     };
 
     private static List<StoryLine> KingDefeat() => new List<StoryLine>

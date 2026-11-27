@@ -252,9 +252,10 @@ public class MainMenu : MonoBehaviour
             "Finde die <color=#FFD447>GEHEIME ZAHL</color> jedes Bosses.\n<color=#FF8A3D>▲ HÖHER</color> / <color=#5A9BFF>▼ TIEFER</color>  näher = mehr Schaden\n<color=#FFD447>GENAU = KRITISCH</color>, dann eine neue Zahl",
             "Trova il <color=#FFD447>NUMERO SEGRETO</color> di ogni boss.\n<color=#FF8A3D>▲ PIÙ ALTO</color> / <color=#5A9BFF>▼ PIÙ BASSO</color>  più vicino = più danni\n<color=#FFD447>ESATTO = CRITICO</color>, poi un nuovo numero");
 
-        string suits = $"{C(Suit.Clubs)} normal   {C(Suit.Spades)} x1.5   {C(Suit.Hearts)} " +
-                       W("heal", "cura", "cura", "soin", "Heilung", "cura") + $"   {C(Suit.Diamonds)} +1 " +
-                       W("card", "carta", "carta", "carte", "Karte", "carta");
+        string suits = $"{C(Suit.Clubs)} {C(Suit.Spades)} {C(Suit.Hearts)} {C(Suit.Diamonds)}  " +
+                       W("same damage · JOKERS add suit bonuses", "mesmo dano · CORINGAS dão bônus de naipe",
+                         "mismo daño · COMODINES dan bonus de palo", "mêmes dégâts · JOKERS = bonus de couleur",
+                         "gleicher Schaden · JOKER geben Farbboni", "stessi danni · JOLLY danno bonus di seme");
 
         string orbs = touch
             ? W($"Orbs {ops} stop time: {Y("DRAG")} 2 cards to the slots, {Y("MERGE")}",
